@@ -1,0 +1,11 @@
+# This is an example environment configuration file for the DEVOPS-CI-CD-Back project.
+#
+# DB_URI: Specifies the connection string for the MongoDB database.
+#         Replace "Aqui enlace de base de datos de mongo" with the actual MongoDB URI.
+#
+# DB_NAME: Defines the name of the MongoDB database to be used.
+#          Replace "Aqui nombre de base de datos" with the actual database name.
+#
+# Note: Rename this file to ".env" and update the values as per your environment setup.
+DB_URI="Aqui enlace de base de datos de mongo"
+DB_NAME="Aqui nombre de base de datos"
