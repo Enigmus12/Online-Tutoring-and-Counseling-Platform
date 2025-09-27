@@ -4,11 +4,14 @@ import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 import UpLearn.eci.edu.co.config.UserServiceException;
 import UpLearn.eci.edu.co.dto.AuthenticationResponseDTO;
 import UpLearn.eci.edu.co.dto.UserAuthenticationDTO;
 import UpLearn.eci.edu.co.dto.UserDTO;
+import UpLearn.eci.edu.co.dto.UserUpdateDTO;
 import UpLearn.eci.edu.co.model.User;
 import UpLearn.eci.edu.co.service.interfaces.UserRepository;
 import UpLearn.eci.edu.co.service.interfaces.UserService;
@@ -28,15 +31,24 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public void deleteUser(String userId) throws UserServiceException {
+    public void deleteUserByToken(String token) throws UserServiceException {
+        String userId = jwtUtil.extractUserId(token.replace("Bearer ", ""));
+        User user = userRepository.findByUserId(userId);
+
+        if (user == null) {
+            throw new UserServiceException("Usuario no encontrado");
+        }
+
         userRepository.deleteByUserId(userId);
     }
+
+
 
     @Override
     public AuthenticationResponseDTO authenticate(UserAuthenticationDTO authenticationDTO) {
         try {
-            // Buscar usuario por nombre de usuario
-            User user = userRepository.findByName(authenticationDTO.getUserName());
+            // Buscar usuario por userId
+            User user = userRepository.findByUserId(authenticationDTO.getUserId());
 
             // Verificar la contraseña
             if (user.getPassword().equals(authenticationDTO.getPassword())) {
@@ -51,6 +63,7 @@ public class UserServiceImpl implements UserService {
             return new AuthenticationResponseDTO(false, null, null, "Usuario no encontrado");
         }
     }
+
 
     @Override
     public User getUserByUserId(String userId) throws UserServiceException {
@@ -112,6 +125,64 @@ public class UserServiceImpl implements UserService {
 
         return userRepository.save(user);
     }
+
+    @Override
+    public User updateUser(String token, UserUpdateDTO updateDTO) throws UserServiceException {
+        String userId = jwtUtil.extractUserId(token.replace("Bearer ", ""));
+        User user = userRepository.findByUserId(userId);
+
+        if (user == null) {
+            throw new UserServiceException("Usuario no encontrado");
+        }
+
+        // Solo actualizamos los atributos permitidos
+        if (updateDTO.getName() != null) user.setName(updateDTO.getName());
+        if (updateDTO.getEmail() != null) user.setEmail(updateDTO.getEmail());
+        if (updateDTO.getPhoneNumber() != null) user.setPhoneNumber(updateDTO.getPhoneNumber());
+
+        if ("STUDENT".equalsIgnoreCase(user.getRole())) {
+            if (updateDTO.getEducationLevel() != null) {
+                user.setEducationLevel(updateDTO.getEducationLevel());
+            }
+        }
+
+        if ("TUTOR".equalsIgnoreCase(user.getRole())) {
+            if (updateDTO.getBio() != null) user.setBio(updateDTO.getBio());
+            if (updateDTO.getSpecializations() != null) user.setSpecializations(updateDTO.getSpecializations());
+            if (updateDTO.getCredentials() != null) user.setCredentials(updateDTO.getCredentials());
+        }
+
+        return userRepository.save(user);
+    }
+
+    @Override
+    public UserUpdateDTO getEditableUser(String token) throws UserServiceException {
+        String userId = jwtUtil.extractUserId(token.replace("Bearer ", ""));
+        User user = userRepository.findByUserId(userId);
+
+        if (user == null) {
+            throw new UserServiceException("Usuario no encontrado");
+        }
+
+        UserUpdateDTO dto = new UserUpdateDTO();
+        dto.setName(user.getName());
+        dto.setEmail(user.getEmail());
+        dto.setPhoneNumber(user.getPhoneNumber());
+
+        if ("STUDENT".equalsIgnoreCase(user.getRole())) {
+            dto.setEducationLevel(user.getEducationLevel());
+        }
+
+        if ("TUTOR".equalsIgnoreCase(user.getRole())) {
+            dto.setBio(user.getBio());
+            dto.setSpecializations(user.getSpecializations());
+            dto.setCredentials(user.getCredentials());
+        }
+
+        return dto;
+    }
+
+
 
 
 

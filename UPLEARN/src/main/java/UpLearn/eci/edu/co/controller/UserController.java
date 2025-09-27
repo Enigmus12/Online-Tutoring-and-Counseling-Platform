@@ -9,6 +9,7 @@ import UpLearn.eci.edu.co.config.UserServiceException;
 import UpLearn.eci.edu.co.dto.AuthenticationResponseDTO;
 import UpLearn.eci.edu.co.dto.UserAuthenticationDTO;
 import UpLearn.eci.edu.co.dto.UserDTO;
+import UpLearn.eci.edu.co.dto.UserUpdateDTO;
 import UpLearn.eci.edu.co.model.User;
 import UpLearn.eci.edu.co.service.interfaces.UserService;
 
@@ -31,11 +32,12 @@ public class UserController {
         return userService.getUserByUserId(userId);
     }
 
-    @DeleteMapping("/Delete-user/{userId}")
-    public List<User> deleteUser(@PathVariable String userId) throws UserServiceException {
-        userService.deleteUser(userId);
-        return userService.getAllUsers();
+    @DeleteMapping("/delete-profile")
+    public String deleteUser(@RequestHeader("Authorization") String token) throws UserServiceException {
+        userService.deleteUserByToken(token);
+        return "Usuario eliminado correctamente";
     }
+
 
     @PostMapping("/login")
     public AuthenticationResponseDTO authenticate(@RequestBody UserAuthenticationDTO authenticationDTO) {
@@ -59,5 +61,20 @@ public class UserController {
 
         return userService.registerUser(userDTO);
     }
+
+    @PutMapping("/update-profile")
+    public User updateProfile(
+            @RequestHeader("Authorization") String token,
+            @RequestBody UserUpdateDTO updateDTO
+    ) throws UserServiceException {
+        return userService.updateUser(token, updateDTO);
+    }
+
+    @GetMapping("/editable-profile")
+    public UserUpdateDTO getEditableProfile(@RequestHeader("Authorization") String token) throws UserServiceException {
+        return userService.getEditableUser(token);
+    }
+
+
 
 }
