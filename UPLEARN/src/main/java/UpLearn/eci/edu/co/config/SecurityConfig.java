@@ -8,14 +8,14 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import UpLearn.eci.edu.co.util.JwtRequestFilter;
+import UpLearn.eci.edu.co.util.CognitoTokenFilter;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     @Autowired
-    JwtRequestFilter jwtRequestFilter;
+    CognitoTokenFilter cognitoTokenFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -28,7 +28,7 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 );
 
-        http.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterBefore(cognitoTokenFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

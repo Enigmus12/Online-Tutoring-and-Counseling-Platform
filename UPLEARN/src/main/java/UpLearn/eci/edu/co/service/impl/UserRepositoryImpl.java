@@ -1,7 +1,6 @@
 package UpLearn.eci.edu.co.service.impl;
 
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -22,15 +21,23 @@ public class UserRepositoryImpl implements UserRepository {
     }
 
     @Override
-    public User findByUserId(String userId) {
-        Optional<User> user = userMongoRepository.findById(userId);
-        return user.orElse(null);
+    public User findBySub(String sub) {
+        return userMongoRepository.findBySub(sub);
     }
 
+    @Override
+    public boolean existsBySub(String sub) {
+        return userMongoRepository.existsBySub(sub);
+    }
 
     @Override
-    public void deleteByUserId(String userId) throws UserServiceException {
-        userMongoRepository.deleteById(userId);
+    public void deleteBySub(String sub) throws UserServiceException {
+        User user = findBySub(sub);
+        if (user != null) {
+            userMongoRepository.delete(user);
+        } else {
+            throw new UserServiceException("Usuario no encontrado con sub: " + sub);
+        }
     }
 
     @Override
@@ -44,6 +51,4 @@ public class UserRepositoryImpl implements UserRepository {
     public User save(User user) {
         return userMongoRepository.save(user);
     }
-
-
 }

@@ -10,15 +10,15 @@ import java.util.List;
 @AllArgsConstructor
 @NoArgsConstructor
 public class UserDTO {
+    private String sub; // ID de Cognito
     private String name;
+    private String email;
+    private String role; // STUDENT o TUTOR
+    private String phoneNumber;
+    
+    // Campos adicionales del perfil
     private String idType;
     private String idNumber;
-    private String email;
-    private String userId;
-    private String password;
-    private String passwordConfirmation;
-    private String phoneNumber;
-    private String role; // STUDENT o TUTOR
 
     // Campos específicos de STUDENT
     private String educationLevel;

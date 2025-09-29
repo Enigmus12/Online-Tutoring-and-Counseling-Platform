@@ -12,16 +12,16 @@ import org.springframework.data.annotation.Id;
 @AllArgsConstructor
 @NoArgsConstructor
 public class User {
+    @Id
+    private String sub; // ID único de Cognito (sub claim)
     private String name;
+    private String email;
+    private String role; // STUDENT o TUTOR
+    private String phoneNumber;
+    
+    // Campos adicionales del perfil (no relacionados con autenticación)
     private String idType;
     private String idNumber;
-    private String email;
-    @Id
-    private String userId;
-    private String password;
-    private String passwordConfirmation;
-    private String phoneNumber;
-    private String role; // STUDENT o TUTOR
 
     // Perfil de estudiante
     private String educationLevel;
