@@ -6,9 +6,10 @@ import java.util.List;
 
 public interface UserRepository{
     List<User> findAll();
-    User findByUserId(String userId) throws UserServiceException;
+    User findBySub(String sub) throws UserServiceException;
     User findByName(String name) throws UserServiceException;
-    void deleteByUserId(String userId) throws UserServiceException;
+    boolean existsBySub(String sub);
+    void deleteBySub(String sub) throws UserServiceException;
     User save(User user);
 }
     

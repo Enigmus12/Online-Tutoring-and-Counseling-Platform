@@ -3,19 +3,16 @@ package UpLearn.eci.edu.co.service.impl;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.stereotype.Service;// Cuando el usuario llega a dashboard después de autenticarse con Cognito
 
 import UpLearn.eci.edu.co.config.UserServiceException;
-import UpLearn.eci.edu.co.dto.AuthenticationResponseDTO;
-import UpLearn.eci.edu.co.dto.UserAuthenticationDTO;
-import UpLearn.eci.edu.co.dto.UserDTO;
+import UpLearn.eci.edu.co.dto.CognitoTokenDTO;
 import UpLearn.eci.edu.co.dto.UserUpdateDTO;
 import UpLearn.eci.edu.co.model.User;
 import UpLearn.eci.edu.co.service.interfaces.UserRepository;
 import UpLearn.eci.edu.co.service.interfaces.UserService;
-import UpLearn.eci.edu.co.util.JwtUtil;
+import UpLearn.eci.edu.co.util.CognitoTokenDecoder;
+import UpLearn.eci.edu.co.util.CognitoTokenDecoder.CognitoUserInfo;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -23,7 +20,7 @@ public class UserServiceImpl implements UserService {
     private UserRepository userRepository;
 
     @Autowired
-    private JwtUtil jwtUtil;
+    private CognitoTokenDecoder cognitoTokenDecoder;
 
     @Override
     public List<User> getAllUsers() {
@@ -32,158 +29,139 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void deleteUserByToken(String token) throws UserServiceException {
-        String userId = jwtUtil.extractUserId(token.replace("Bearer ", ""));
-        User user = userRepository.findByUserId(userId);
-
-        if (user == null) {
-            throw new UserServiceException("Usuario no encontrado");
-        }
-
-        userRepository.deleteByUserId(userId);
-    }
-
-
-
-    @Override
-    public AuthenticationResponseDTO authenticate(UserAuthenticationDTO authenticationDTO) {
         try {
-            // Buscar usuario por userId
-            User user = userRepository.findByUserId(authenticationDTO.getUserId());
-
-            // Verificar la contraseña
-            if (user.getPassword().equals(authenticationDTO.getPassword())) {
-                // Generar token JWT con el userId y el role
-                String token = jwtUtil.generateToken(user.getUserId(), user.getRole());
-                return new AuthenticationResponseDTO(true, user, token, "Autenticación exitosa");
-            } else {
-                return new AuthenticationResponseDTO(false, null, null, "Contraseña incorrecta");
+            // Extraer información del token de Cognito
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            String sub = userInfo.getSub();
+            
+            User user = userRepository.findBySub(sub);
+            if (user == null) {
+                throw new UserServiceException("Usuario no encontrado");
             }
-        } catch (UserServiceException e) {
-            // Usuario no encontrado
-            return new AuthenticationResponseDTO(false, null, null, "Usuario no encontrado");
+
+            userRepository.deleteBySub(sub);
+        } catch (Exception e) {
+            throw new UserServiceException("Error al eliminar usuario: " + e.getMessage());
         }
     }
 
-
     @Override
-    public User getUserByUserId(String userId) throws UserServiceException {
-        return userRepository.findByUserId(userId);
+    public User getUserBySub(String sub) throws UserServiceException {
+        User user = userRepository.findBySub(sub);
+        if (user == null) {
+            throw new UserServiceException("Usuario no encontrado con sub: " + sub);
+        }
+        return user;
     }
 
     @Override
-    public User registerUser(UserDTO userDTO) throws UserServiceException {
-        // 1. Validar que el userId no exista
-        User existingUser = userRepository.findByUserId(userDTO.getUserId());
-        if (existingUser != null) {
-            throw new UserServiceException(
-                "El userId " + userDTO.getUserId() + " ya existe. Debe ser único."
-            );
-        }
-
-        // 2. Validar idNumber y rol
-        List<User> allUsers = userRepository.findAll();
-        for (User u : allUsers) {
-            if (u.getIdNumber().equals(userDTO.getIdNumber())) {
-                if (u.getRole().equalsIgnoreCase(userDTO.getRole())) {
-                    throw new UserServiceException(
-                        "Ya existe un usuario con idNumber " + userDTO.getIdNumber() +
-                        " y rol " + userDTO.getRole()
-                    );
-                }
-                // Si tiene el mismo idNumber pero rol diferente -> permitir
+    public User processUserFromCognito(CognitoTokenDTO cognitoTokenDTO) throws UserServiceException {
+        try {
+            // Validar que el token no esté vacío
+            if (cognitoTokenDTO.getToken() == null || cognitoTokenDTO.getToken().trim().isEmpty()) {
+                throw new UserServiceException("Token no puede estar vacío");
             }
-        }
 
-        // 3. Crear usuario nuevo
-        User user = new User();
-        user.setName(userDTO.getName());
-        user.setIdType(userDTO.getIdType());
-        user.setIdNumber(userDTO.getIdNumber());
-        user.setEmail(userDTO.getEmail());
-        user.setUserId(userDTO.getUserId());
-        user.setPassword(userDTO.getPassword());
-        user.setPasswordConfirmation(userDTO.getPasswordConfirmation());
-        user.setPhoneNumber(userDTO.getPhoneNumber());
-        user.setRole(userDTO.getRole());
-
-        // Validaciones según el rol
-        if ("STUDENT".equalsIgnoreCase(userDTO.getRole())) {
-            if (userDTO.getEducationLevel() == null) {
-                throw new UserServiceException("El campo educationLevel es obligatorio para estudiantes");
+            // Validar que el token sea válido
+            if (!cognitoTokenDecoder.isTokenValid(cognitoTokenDTO.getToken())) {
+                throw new UserServiceException("Token expirado o inválido");
             }
-            user.setEducationLevel(userDTO.getEducationLevel());
-        }
 
-        if ("TUTOR".equalsIgnoreCase(userDTO.getRole())) {
-            if (userDTO.getBio() == null) {
-                throw new UserServiceException("El campo bio es obligatorio para tutores");
+            // Extraer información del usuario desde el token
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(cognitoTokenDTO.getToken());
+
+            // Verificar si el usuario ya existe por sub
+            if (userRepository.existsBySub(userInfo.getSub())) {
+                // Si existe, retornar el usuario existente (sin crear duplicado)
+                return userRepository.findBySub(userInfo.getSub());
             }
-            user.setBio(userDTO.getBio());
-            user.setSpecializations(userDTO.getSpecializations());
-            user.setCredentials(userDTO.getCredentials());
-        }
 
-        return userRepository.save(user);
+            // Si no existe, crear nuevo usuario con la información del token
+            User newUser = new User();
+            newUser.setSub(userInfo.getSub());
+            newUser.setName(userInfo.getName());
+            newUser.setEmail(userInfo.getEmail());
+            newUser.setRole(userInfo.getRole() != null ? userInfo.getRole().toUpperCase() : "STUDENT");
+            newUser.setPhoneNumber(userInfo.getPhoneNumber());
+
+            // Guardar el nuevo usuario en la base de datos
+            return userRepository.save(newUser);
+
+        } catch (Exception e) {
+            throw new UserServiceException("Error al procesar usuario desde Cognito: " + e.getMessage());
+        }
     }
 
     @Override
     public User updateUser(String token, UserUpdateDTO updateDTO) throws UserServiceException {
-        String userId = jwtUtil.extractUserId(token.replace("Bearer ", ""));
-        User user = userRepository.findByUserId(userId);
-
-        if (user == null) {
-            throw new UserServiceException("Usuario no encontrado");
-        }
-
-        // Solo actualizamos los atributos permitidos
-        if (updateDTO.getName() != null) user.setName(updateDTO.getName());
-        if (updateDTO.getEmail() != null) user.setEmail(updateDTO.getEmail());
-        if (updateDTO.getPhoneNumber() != null) user.setPhoneNumber(updateDTO.getPhoneNumber());
-
-        if ("STUDENT".equalsIgnoreCase(user.getRole())) {
-            if (updateDTO.getEducationLevel() != null) {
-                user.setEducationLevel(updateDTO.getEducationLevel());
+        try {
+            // Extraer información del token de Cognito
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            String sub = userInfo.getSub();
+            
+            User user = userRepository.findBySub(sub);
+            if (user == null) {
+                throw new UserServiceException("Usuario no encontrado");
             }
-        }
 
-        if ("TUTOR".equalsIgnoreCase(user.getRole())) {
-            if (updateDTO.getBio() != null) user.setBio(updateDTO.getBio());
-            if (updateDTO.getSpecializations() != null) user.setSpecializations(updateDTO.getSpecializations());
-            if (updateDTO.getCredentials() != null) user.setCredentials(updateDTO.getCredentials());
-        }
+            // Solo actualizamos los atributos permitidos (no los de autenticación de Cognito)
+            if (updateDTO.getName() != null) user.setName(updateDTO.getName());
+            if (updateDTO.getEmail() != null) user.setEmail(updateDTO.getEmail());
+            if (updateDTO.getPhoneNumber() != null) user.setPhoneNumber(updateDTO.getPhoneNumber());
+            if (updateDTO.getIdType() != null) user.setIdType(updateDTO.getIdType());
+            if (updateDTO.getIdNumber() != null) user.setIdNumber(updateDTO.getIdNumber());
 
-        return userRepository.save(user);
+            // Actualizaciones específicas por rol
+            if ("STUDENT".equalsIgnoreCase(user.getRole())) {
+                if (updateDTO.getEducationLevel() != null) {
+                    user.setEducationLevel(updateDTO.getEducationLevel());
+                }
+            }
+
+            if ("TUTOR".equalsIgnoreCase(user.getRole())) {
+                if (updateDTO.getBio() != null) user.setBio(updateDTO.getBio());
+                if (updateDTO.getSpecializations() != null) user.setSpecializations(updateDTO.getSpecializations());
+                if (updateDTO.getCredentials() != null) user.setCredentials(updateDTO.getCredentials());
+            }
+
+            return userRepository.save(user);
+        } catch (Exception e) {
+            throw new UserServiceException("Error al actualizar usuario: " + e.getMessage());
+        }
     }
 
     @Override
     public UserUpdateDTO getEditableUser(String token) throws UserServiceException {
-        String userId = jwtUtil.extractUserId(token.replace("Bearer ", ""));
-        User user = userRepository.findByUserId(userId);
+        try {
+            // Extraer información del token de Cognito
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            String sub = userInfo.getSub();
+            
+            User user = userRepository.findBySub(sub);
+            if (user == null) {
+                throw new UserServiceException("Usuario no encontrado");
+            }
 
-        if (user == null) {
-            throw new UserServiceException("Usuario no encontrado");
+            UserUpdateDTO dto = new UserUpdateDTO();
+            dto.setName(user.getName());
+            dto.setEmail(user.getEmail());
+            dto.setPhoneNumber(user.getPhoneNumber());
+            dto.setIdType(user.getIdType());
+            dto.setIdNumber(user.getIdNumber());
+
+            if ("STUDENT".equalsIgnoreCase(user.getRole())) {
+                dto.setEducationLevel(user.getEducationLevel());
+            }
+
+            if ("TUTOR".equalsIgnoreCase(user.getRole())) {
+                dto.setBio(user.getBio());
+                dto.setSpecializations(user.getSpecializations());
+                dto.setCredentials(user.getCredentials());
+            }
+
+            return dto;
+        } catch (Exception e) {
+            throw new UserServiceException("Error al obtener información del usuario: " + e.getMessage());
         }
-
-        UserUpdateDTO dto = new UserUpdateDTO();
-        dto.setName(user.getName());
-        dto.setEmail(user.getEmail());
-        dto.setPhoneNumber(user.getPhoneNumber());
-
-        if ("STUDENT".equalsIgnoreCase(user.getRole())) {
-            dto.setEducationLevel(user.getEducationLevel());
-        }
-
-        if ("TUTOR".equalsIgnoreCase(user.getRole())) {
-            dto.setBio(user.getBio());
-            dto.setSpecializations(user.getSpecializations());
-            dto.setCredentials(user.getCredentials());
-        }
-
-        return dto;
     }
-
-
-
-
-
 }

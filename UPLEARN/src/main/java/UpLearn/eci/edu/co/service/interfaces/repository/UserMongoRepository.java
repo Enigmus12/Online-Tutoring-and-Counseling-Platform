@@ -7,4 +7,6 @@ import UpLearn.eci.edu.co.model.User;
 @Repository
 public interface UserMongoRepository extends MongoRepository<User, String>{
     User findByName(String name);
+    User findBySub(String sub); // Buscar por el ID de Cognito
+    boolean existsBySub(String sub); // Verificar existencia por sub
 }
