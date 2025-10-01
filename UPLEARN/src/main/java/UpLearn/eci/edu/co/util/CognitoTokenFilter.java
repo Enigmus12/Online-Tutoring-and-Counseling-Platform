@@ -26,6 +26,14 @@ public class CognitoTokenFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
+        // Permitir ciertos endpoints sin autenticación
+        String requestPath = request.getRequestURI();
+        
+        if (shouldSkipFilter(requestPath)) {
+            chain.doFilter(request, response);
+            return;
+        }
+
         final String authorizationHeader = request.getHeader("Authorization");
 
         String sub = null;
@@ -35,7 +43,7 @@ public class CognitoTokenFilter extends OncePerRequestFilter {
             jwt = authorizationHeader.substring(7);
             try {
                 // Validar que el token de Cognito sea válido
-                if (cognitoTokenDecoder.isTokenValid(jwt)) {
+                if (cognitoTokenDecoder != null && cognitoTokenDecoder.isTokenValid(jwt)) {
                     CognitoTokenDecoder.CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(jwt);
                     sub = userInfo.getSub();
                 }
@@ -46,15 +54,9 @@ public class CognitoTokenFilter extends OncePerRequestFilter {
 
         if (sub != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
-                CognitoTokenDecoder.CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(jwt);
-                
                 List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-                // Usar el rol del token de Cognito
-                if (userInfo.getRole() != null) {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_" + userInfo.getRole().toUpperCase()));
-                } else {
-                    authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
-                }
+                // Ya no usamos el rol del token, asignar rol básico
+                authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
 
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         sub, null, authorities);
@@ -66,5 +68,14 @@ public class CognitoTokenFilter extends OncePerRequestFilter {
             }
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * Determina si el filtro debe saltarse para ciertos endpoints
+     */
+    private boolean shouldSkipFilter(String requestPath) {
+        return requestPath.equals("/Api-user/process-cognito-user") ||
+               requestPath.equals("/Api-user/users") ||
+               requestPath.startsWith("/Api-search/");
     }
 }

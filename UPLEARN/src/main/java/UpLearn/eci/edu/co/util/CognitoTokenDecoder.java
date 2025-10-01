@@ -60,11 +60,7 @@ public class CognitoTokenDecoder {
             userInfo.setEmail(jsonNode.get("email").asText());
             userInfo.setName(jsonNode.get("name").asText());
             
-            // El rol personalizado viene en el campo custom:role
-            JsonNode roleNode = jsonNode.get("custom:role");
-            if (roleNode != null) {
-                userInfo.setRole(roleNode.asText().toUpperCase());
-            }
+            // Ya no extraemos el rol del token, viene del frontend
 
             // Teléfono opcional
             JsonNode phoneNode = jsonNode.get("phone_number");
@@ -118,7 +114,6 @@ public class CognitoTokenDecoder {
         private String sub;
         private String email;
         private String name;
-        private String role;
         private String phoneNumber;
         private String nickname;
 
@@ -132,9 +127,6 @@ public class CognitoTokenDecoder {
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
 
-        public String getRole() { return role; }
-        public void setRole(String role) { this.role = role; }
-
         public String getPhoneNumber() { return phoneNumber; }
         public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
 
@@ -147,7 +139,6 @@ public class CognitoTokenDecoder {
                     "sub='" + sub + '\'' +
                     ", email='" + email + '\'' +
                     ", name='" + name + '\'' +
-                    ", role='" + role + '\'' +
                     ", phoneNumber='" + phoneNumber + '\'' +
                     ", nickname='" + nickname + '\'' +
                     '}';
