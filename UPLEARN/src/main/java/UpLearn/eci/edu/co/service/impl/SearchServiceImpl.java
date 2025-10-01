@@ -35,7 +35,7 @@ public class SearchServiceImpl implements SearchService {
             List<User> all = userRepository.findAll();
 
             return all.stream()
-                    .filter(u -> "TUTOR".equalsIgnoreCase(safe(u.getRole())))
+                    .filter(u -> u.getRole() != null && u.getRole().stream().anyMatch(role -> "TUTOR".equalsIgnoreCase(role)))
                     .map(u -> new AbstractMap.SimpleEntry<>(u, scoreTutor(u, phrase, tokens)))
                     .filter(e -> e.getValue() > 0)
                     .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))

@@ -2,10 +2,8 @@ package UpLearn.eci.edu.co.dto;
 
 import lombok.Data;
 
-import java.util.List;
-
 @Data
-public class UserUpdateDTO {
+public class StudentProfileDTO {
     private String name;
     private String email;
     private String phoneNumber;
@@ -16,11 +14,6 @@ public class UserUpdateDTO {
     private String profilePicture;
     private String nickname;
 
-    // Perfil de estudiante
+    // Campos específicos de estudiante
     private String educationLevel;
-
-    // Perfil de tutor
-    private String bio;
-    private List<String> specializations;
-    private List<String> credentials;
 }

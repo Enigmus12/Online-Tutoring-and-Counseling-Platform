@@ -16,7 +16,7 @@ public class User {
     private String sub; // ID único de Cognito (sub claim)
     private String name;
     private String email;
-    private String role; // STUDENT o TUTOR
+    private List<String> role; // Lista de roles: STUDENT, TUTOR, etc.
     private String phoneNumber;
     
     // Campos adicionales del perfil (no relacionados con autenticación)
