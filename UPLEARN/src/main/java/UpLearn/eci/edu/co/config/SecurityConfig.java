@@ -1,6 +1,5 @@
 package UpLearn.eci.edu.co.config;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -19,8 +18,11 @@ import java.util.Arrays;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    @Autowired
-    CognitoTokenFilter cognitoTokenFilter;
+    private final CognitoTokenFilter cognitoTokenFilter;
+
+    public SecurityConfig(CognitoTokenFilter cognitoTokenFilter) {
+        this.cognitoTokenFilter = cognitoTokenFilter;
+    }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -31,6 +33,7 @@ public class SecurityConfig {
                         .requestMatchers("/Api-user/users").permitAll()
                         .requestMatchers("/Api-search/**").permitAll()
                         .requestMatchers("/Api-user/**").authenticated()
+                        .requestMatchers("/Api-user/public/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

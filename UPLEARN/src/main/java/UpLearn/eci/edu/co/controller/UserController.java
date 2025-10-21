@@ -1,6 +1,6 @@
 package UpLearn.eci.edu.co.controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -12,24 +12,29 @@ import UpLearn.eci.edu.co.dto.StudentProfileDTO;
 import UpLearn.eci.edu.co.dto.TutorProfileDTO;
 import UpLearn.eci.edu.co.model.User;
 import UpLearn.eci.edu.co.service.interfaces.UserService;
-
+/**
+ * Controlador para la gestión de usuarios
+ */
 @RestController
 @RequestMapping("/Api-user")
 @CrossOrigin(origins = "*")
 public class UserController {
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
 
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+    /* Obtener todos los usuarios */
     @GetMapping("/users")
     public List<User> users(){
         return userService.getAllUsers();
     }
-
+    /* Obtener un usuario por su sub */
     @GetMapping("/users/{sub}")
     public User user (@PathVariable String sub) throws UserServiceException {
         return userService.getUserBySub(sub);
     }
-
+    /* Eliminar un usuario por su token */
     @DeleteMapping("/delete-profile")
     public String deleteUser(@RequestHeader("Authorization") String token) throws UserServiceException {
         userService.deleteUserByToken(token);
@@ -148,4 +153,23 @@ public class UserController {
     public Map<String, Object> removeTutorRole(@RequestHeader("Authorization") String token) throws UserServiceException {
         return userService.removeTutorRole(token);
     }
+
+    /**
+     * Obtiene el perfil público de un usuario dado su sub
+     * @param sub Sub del usuario cuyo perfil se desea obtener
+     * @return Mapa con la información pública del usuario
+     * @throws UserServiceException en caso de error al obtener el perfil
+     */
+    @GetMapping("/public/profile")
+    public ResponseEntity<Map<String, Object>> getPublicProfile(
+            @RequestParam(value = "sub", required = false) String sub,
+            @RequestParam(value = "id", required = false) String id
+    ) throws UserServiceException {
+        String key = (sub != null && !sub.isBlank()) ? sub : id;
+        if (key == null || key.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Debe proporcionar 'sub' o 'id'"));
+        }
+        return ResponseEntity.ok(userService.getPublicProfileBySub(key));
+    }
+
 }
