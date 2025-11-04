@@ -630,4 +630,22 @@ public class UserServiceImpl implements UserService {
             throw new UserServiceException("Error al eliminar rol de tutor: " + e.getMessage());
         }
     }
+    // =====================================================
+    // NUEVO MÉTODO PARA PERFIL PÚBLICO POR SUB
+    @Override
+    public Map<String, Object> getPublicProfileBySub(String sub) throws UserServiceException {
+        if (sub == null || sub.isBlank()) throw new UserServiceException("El parámetro 'sub' es requerido");
+        User user = getUserBySub(sub);
+        Map<String, Object> out = new HashMap<>();
+        out.put("sub", user.getSub());
+        out.put("name", user.getName());
+        out.put("role", user.getRole());
+        boolean isTutor = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
+        if (isTutor) {
+            out.put("specializations", user.getSpecializations());
+            out.put("credentials", user.getCredentials());
+        }
+        return out;
+    }
+
 }

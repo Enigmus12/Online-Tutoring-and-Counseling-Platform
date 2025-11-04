@@ -19,8 +19,12 @@ import java.util.List;
 @Component
 public class CognitoTokenFilter extends OncePerRequestFilter {
 
+    private final CognitoTokenDecoder cognitoTokenDecoder;
+
     @Autowired
-    private CognitoTokenDecoder cognitoTokenDecoder;
+    public CognitoTokenFilter(CognitoTokenDecoder cognitoTokenDecoder) {
+        this.cognitoTokenDecoder = cognitoTokenDecoder;
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -76,6 +80,7 @@ public class CognitoTokenFilter extends OncePerRequestFilter {
     private boolean shouldSkipFilter(String requestPath) {
         return requestPath.equals("/Api-user/process-cognito-user") ||
                requestPath.equals("/Api-user/users") ||
+               requestPath.equals("/Api-user/public/") ||   
                requestPath.startsWith("/Api-search/");
     }
 }

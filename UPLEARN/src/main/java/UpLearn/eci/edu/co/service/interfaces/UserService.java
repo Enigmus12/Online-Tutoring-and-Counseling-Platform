@@ -34,4 +34,8 @@ public interface UserService {
     TutorProfileDTO getTutorProfile(String token) throws UserServiceException;
     TutorProfileDTO updateTutorProfile(String token, TutorProfileDTO tutorDTO) throws UserServiceException;
     Map<String, Object> removeTutorRole(String token) throws UserServiceException;
+    
+    // Método para obtener perfil público por sub
+    Map<String, Object> getPublicProfileBySub(String sub) throws UserServiceException;
+
 }
