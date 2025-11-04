@@ -3,6 +3,7 @@ package UpLearn.eci.edu.co.service.interfaces;
 import UpLearn.eci.edu.co.model.User;
 import UpLearn.eci.edu.co.config.UserServiceException;
 import UpLearn.eci.edu.co.dto.CognitoTokenDTO;
+import UpLearn.eci.edu.co.dto.ProfileStatusDTO;
 import UpLearn.eci.edu.co.dto.StudentProfileDTO;
 import UpLearn.eci.edu.co.dto.TutorProfileDTO;
 
@@ -37,5 +38,8 @@ public interface UserService {
     
     // Método para obtener perfil público por sub
     Map<String, Object> getPublicProfileBySub(String sub) throws UserServiceException;
+    
+    // Método para verificar el estado de completitud del perfil
+    ProfileStatusDTO getProfileStatus(String token, String role) throws UserServiceException;
 
 }
