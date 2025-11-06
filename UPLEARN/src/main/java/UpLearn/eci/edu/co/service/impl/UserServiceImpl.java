@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import UpLearn.eci.edu.co.config.UserServiceException;
 import UpLearn.eci.edu.co.dto.CognitoTokenDTO;
+import UpLearn.eci.edu.co.dto.ProfileStatusDTO;
 import UpLearn.eci.edu.co.dto.StudentProfileDTO;
 import UpLearn.eci.edu.co.dto.TutorProfileDTO;
 import UpLearn.eci.edu.co.model.User;
@@ -646,6 +647,104 @@ public class UserServiceImpl implements UserService {
             out.put("credentials", user.getCredentials());
         }
         return out;
+    }
+
+    // =====================================================
+    // MÉTODO PARA VERIFICAR ESTADO DE COMPLETITUD DEL PERFIL
+    @Override
+    public ProfileStatusDTO getProfileStatus(String token, String role) throws UserServiceException {
+        try {
+            // Extraer información del token de Cognito
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            String sub = userInfo.getSub();
+            
+            User user = userRepository.findBySub(sub);
+            if (user == null) {
+                throw new UserServiceException("Usuario no encontrado");
+            }
+
+            ProfileStatusDTO profileStatus = new ProfileStatusDTO();
+            List<String> missingFields = new ArrayList<>();
+            
+            // Determinar el rol a verificar
+            String currentRole = null;
+            
+            // Si se proporciona el parámetro role, usarlo; de lo contrario, usar el primer rol del usuario
+            if (role != null && !role.trim().isEmpty()) {
+                // Validar que el usuario tenga ese rol
+                boolean hasRole = user.getRole() != null && 
+                    user.getRole().stream().anyMatch(r -> r.equalsIgnoreCase(role));
+                
+                if (!hasRole) {
+                    throw new UserServiceException("El usuario no tiene el rol: " + role);
+                }
+                currentRole = role.toUpperCase();
+            } else {
+                // Tomar el primer rol si tiene múltiples
+                if (user.getRole() != null && !user.getRole().isEmpty()) {
+                    currentRole = user.getRole().get(0).toUpperCase();
+                }
+            }
+            
+            profileStatus.setCurrentRole(currentRole);
+            
+            // Si no tiene rol, el perfil está incompleto
+            if (currentRole == null) {
+                profileStatus.setComplete(false);
+                missingFields.add("role");
+                profileStatus.setMissingFields(missingFields);
+                return profileStatus;
+            }
+            
+            // Verificar campos según el rol
+            if ("STUDENT".equalsIgnoreCase(currentRole)) {
+                // Para estudiante: name, email, phoneNumber, educationLevel
+                if (user.getName() == null || user.getName().trim().isEmpty()) {
+                    missingFields.add("name");
+                }
+                if (user.getEmail() == null || user.getEmail().trim().isEmpty()) {
+                    missingFields.add("email");
+                }
+                if (user.getPhoneNumber() == null || user.getPhoneNumber().trim().isEmpty()) {
+                    missingFields.add("phoneNumber");
+                }
+                if (user.getEducationLevel() == null || user.getEducationLevel().trim().isEmpty()) {
+                    missingFields.add("educationLevel");
+                }
+            } else if ("TUTOR".equalsIgnoreCase(currentRole)) {
+                // Para tutor: name, email, phoneNumber, bio, specializations (al menos 1), credentials (al menos 1)
+                if (user.getName() == null || user.getName().trim().isEmpty()) {
+                    missingFields.add("name");
+                }
+                if (user.getEmail() == null || user.getEmail().trim().isEmpty()) {
+                    missingFields.add("email");
+                }
+                if (user.getPhoneNumber() == null || user.getPhoneNumber().trim().isEmpty()) {
+                    missingFields.add("phoneNumber");
+                }
+                if (user.getBio() == null || user.getBio().trim().isEmpty()) {
+                    missingFields.add("bio");
+                }
+                if (user.getSpecializations() == null || user.getSpecializations().isEmpty()) {
+                    missingFields.add("specializations");
+                }
+                if (user.getCredentials() == null || user.getCredentials().isEmpty()) {
+                    missingFields.add("credentials");
+                }
+            }
+            
+            // Determinar si el perfil está completo
+            boolean isComplete = missingFields.isEmpty();
+            profileStatus.setComplete(isComplete);
+            profileStatus.setMissingFields(missingFields.isEmpty() ? null : missingFields);
+            
+            return profileStatus;
+            
+        } catch (UserServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new UserServiceException("Error al verificar estado del perfil: " + e.getMessage());
+        }
     }
 
 }

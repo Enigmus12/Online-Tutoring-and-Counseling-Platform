@@ -8,6 +8,7 @@ import java.util.Map;
 
 import UpLearn.eci.edu.co.config.UserServiceException;
 import UpLearn.eci.edu.co.dto.CognitoTokenDTO;
+import UpLearn.eci.edu.co.dto.ProfileStatusDTO;
 import UpLearn.eci.edu.co.dto.StudentProfileDTO;
 import UpLearn.eci.edu.co.dto.TutorProfileDTO;
 import UpLearn.eci.edu.co.model.User;
@@ -84,6 +85,18 @@ public class UserController {
     @GetMapping("/my-roles")
     public Map<String, Object> getMyRoles(@RequestHeader("Authorization") String token) throws UserServiceException {
         return userService.getUserRolesComplete(token);
+    }
+
+    /**
+     * Verifica el estado de completitud del perfil del usuario autenticado
+     * Retorna si el perfil está completo, los campos faltantes y el rol actual
+     */
+    @GetMapping("/profile-status")
+    public ProfileStatusDTO getProfileStatus(
+            @RequestHeader("Authorization") String token,
+            @RequestParam(required = false) String role
+    ) throws UserServiceException {
+        return userService.getProfileStatus(token, role);
     }
 
     // 
