@@ -31,9 +31,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/Api-user/process-cognito-user").permitAll()
                         .requestMatchers("/Api-user/users").permitAll()
+                        .requestMatchers("/Api-user/tutor/credentials/validate").permitAll()
+                        .requestMatchers("/Api-user/public/**").permitAll()
                         .requestMatchers("/Api-search/**").permitAll()
                         .requestMatchers("/Api-user/**").authenticated()
-                        .requestMatchers("/Api-user/public/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

@@ -12,6 +12,7 @@ import UpLearn.eci.edu.co.dto.ProfileStatusDTO;
 import UpLearn.eci.edu.co.dto.StudentProfileDTO;
 import UpLearn.eci.edu.co.dto.TutorProfileDTO;
 import UpLearn.eci.edu.co.model.User;
+import org.springframework.web.multipart.MultipartFile;
 import UpLearn.eci.edu.co.service.interfaces.UserService;
 /**
  * Controlador para la gestión de usuarios
@@ -165,6 +166,36 @@ public class UserController {
     @DeleteMapping("/tutor/profile")
     public Map<String, Object> removeTutorRole(@RequestHeader("Authorization") String token) throws UserServiceException {
         return userService.removeTutorRole(token);
+    }
+
+
+    /**
+     * Sube archivos de credenciales para el tutor autenticado.
+     * Automáticamente: sube a Azure, valida con n8n, y guarda en BD solo documentos académicos válidos.
+     * Recibe multipart/form-data con la clave 'files'.
+     */
+    @PostMapping(value = "/tutor/credentials", consumes = {"multipart/form-data"})
+    public ResponseEntity<Map<String, Object>> uploadTutorCredentials(
+            @RequestHeader("Authorization") String token,
+            @RequestParam("files") List<MultipartFile> files
+    ) throws UserServiceException {
+        Map<String, Object> result = userService.uploadAndValidateTutorCredentials(token, files);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Elimina URLs de credenciales del tutor autenticado. Si al finalizar no quedan
+     * credenciales, el usuario queda no verificado y se devuelve en la respuesta.
+     * Espera un JSON como: { "urls": ["https://.../file1.pdf", "https://.../file2.pdf"] }
+     */
+    @DeleteMapping("/tutor/credentials")
+    public ResponseEntity<Map<String, Object>> deleteTutorCredentials(
+            @RequestHeader("Authorization") String token,
+            @RequestBody(required = false) Map<String, List<String>> body
+    ) throws UserServiceException {
+        List<String> urls = body != null ? body.get("urls") : null;
+        Map<String, Object> result = userService.deleteTutorCredentials(token, urls);
+        return ResponseEntity.ok(result);
     }
 
     /**

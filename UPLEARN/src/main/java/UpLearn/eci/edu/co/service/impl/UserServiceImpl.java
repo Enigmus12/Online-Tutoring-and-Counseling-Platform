@@ -6,18 +6,26 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
 
 import UpLearn.eci.edu.co.config.UserServiceException;
 import UpLearn.eci.edu.co.dto.CognitoTokenDTO;
 import UpLearn.eci.edu.co.dto.ProfileStatusDTO;
 import UpLearn.eci.edu.co.dto.StudentProfileDTO;
 import UpLearn.eci.edu.co.dto.TutorProfileDTO;
+import UpLearn.eci.edu.co.dto.N8nValidationResultDTO;
 import UpLearn.eci.edu.co.model.User;
 import UpLearn.eci.edu.co.service.interfaces.UserRepository;
 import UpLearn.eci.edu.co.service.interfaces.UserService;
 import UpLearn.eci.edu.co.util.CognitoTokenDecoder;
 import UpLearn.eci.edu.co.util.CognitoTokenDecoder.CognitoUserInfo;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -26,6 +34,12 @@ public class UserServiceImpl implements UserService {
 
     @Autowired
     private CognitoTokenDecoder cognitoTokenDecoder;
+
+    @Autowired
+    private AzureBlobStorageService azureBlobStorageService;
+
+    @Value("${n8n.webhook.url}")
+    private String n8nWebhookUrl;
 
     @Override
     public List<User> getAllUsers() {
@@ -496,6 +510,7 @@ public class UserServiceImpl implements UserService {
             dto.setBio(user.getBio());
             dto.setSpecializations(user.getSpecializations());
             dto.setCredentials(user.getCredentials());
+            dto.setVerified(user.isVerified());
 
             return dto;
         } catch (UserServiceException e) {
@@ -540,7 +555,7 @@ public class UserServiceImpl implements UserService {
             if (tutorDTO.getIdNumber() != null) user.setIdNumber(tutorDTO.getIdNumber());
             if (tutorDTO.getBio() != null) user.setBio(tutorDTO.getBio());
             if (tutorDTO.getSpecializations() != null) user.setSpecializations(tutorDTO.getSpecializations());
-            if (tutorDTO.getCredentials() != null) user.setCredentials(tutorDTO.getCredentials());
+            // Ya no se permite modificar 'credentials' desde este endpoint
 
             User savedUser = userRepository.save(user);
 
@@ -554,6 +569,7 @@ public class UserServiceImpl implements UserService {
             updatedDTO.setBio(savedUser.getBio());
             updatedDTO.setSpecializations(savedUser.getSpecializations());
             updatedDTO.setCredentials(savedUser.getCredentials());
+            updatedDTO.setVerified(savedUser.isVerified());
 
             return updatedDTO;
         } catch (UserServiceException e) {
@@ -744,6 +760,246 @@ public class UserServiceImpl implements UserService {
             throw e;
         } catch (Exception e) {
             throw new UserServiceException("Error al verificar estado del perfil: " + e.getMessage());
+        }
+    }
+
+    // =====================================================
+    // SUBIDA, VALIDACIÓN Y GUARDADO AUTOMÁTICO DE CREDENCIALES
+    // =====================================================
+    @Override
+    public Map<String, Object> uploadAndValidateTutorCredentials(String token, List<MultipartFile> files) throws UserServiceException {
+        try {
+            if (files == null || files.isEmpty()) {
+                throw new UserServiceException("Debe proporcionar al menos un archivo");
+            }
+            
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            String sub = userInfo.getSub();
+            User user = userRepository.findBySub(sub);
+            if (user == null) {
+                throw new UserServiceException("Usuario no encontrado");
+            }
+            
+            boolean hasTutorRole = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
+            if (!hasTutorRole) {
+                throw new UserServiceException("El usuario no tiene el rol de tutor");
+            }
+
+            List<Map<String, Object>> results = new ArrayList<>();
+            List<String> validUrls = new ArrayList<>();
+            int uploaded = 0;
+            int validated = 0;
+            int rejected = 0;
+
+            // Procesar cada archivo
+            for (MultipartFile file : files) {
+                Map<String, Object> fileResult = new HashMap<>();
+                fileResult.put("fileName", file.getOriginalFilename());
+                
+                try {
+                    // 1. Subir a Azure
+                    List<String> urls = azureBlobStorageService.uploadFiles(sub, List.of(file));
+                    String fileUrl = urls.get(0);
+                    uploaded++;
+                    fileResult.put("uploadedUrl", fileUrl);
+                    fileResult.put("uploaded", true);
+
+                    // 2. Validar con n8n
+                    RestTemplate restTemplate = new RestTemplate();
+                    HttpHeaders headers = new HttpHeaders();
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                    Map<String, String> body = new HashMap<>();
+                    body.put("fileUrl", fileUrl);
+                    HttpEntity<Map<String, String>> req = new HttpEntity<>(body, headers);
+
+                    N8nValidationResultDTO validationResult = null;
+                    try {
+                        ResponseEntity<N8nValidationResultDTO> resp = restTemplate.postForEntity(n8nWebhookUrl, req, N8nValidationResultDTO.class);
+                        validationResult = resp.getBody();
+                    } catch (Exception e) {
+                        ResponseEntity<N8nValidationResultDTO[]> resp = restTemplate.postForEntity(n8nWebhookUrl, req, N8nValidationResultDTO[].class);
+                        N8nValidationResultDTO[] resultsArray = resp.getBody();
+                        if (resultsArray != null && resultsArray.length > 0) {
+                            validationResult = resultsArray[0];
+                        }
+                    }
+
+                    if (validationResult == null) {
+                        throw new UserServiceException("Respuesta inválida desde n8n");
+                    }
+
+                    fileResult.put("validation", validationResult);
+
+                    // 3. Guardar en BD solo si es documento académico
+                    if (validationResult.isEsDocumentoAcademico()) {
+                        validUrls.add(fileUrl);
+                        validated++;
+                        fileResult.put("saved", true);
+                        fileResult.put("status", "accepted");
+                    } else {
+                        rejected++;
+                        fileResult.put("saved", false);
+                        fileResult.put("status", "rejected");
+                        fileResult.put("reason", validationResult.getMotivoNoValido());
+                    }
+
+                } catch (Exception e) {
+                    fileResult.put("uploaded", false);
+                    fileResult.put("saved", false);
+                    fileResult.put("status", "error");
+                    fileResult.put("error", e.getMessage());
+                    rejected++;
+                }
+
+                results.add(fileResult);
+            }
+
+            // Guardar URLs válidas en BD
+            if (!validUrls.isEmpty()) {
+                if (user.getCredentials() == null) {
+                    user.setCredentials(new ArrayList<>());
+                }
+                for (String url : validUrls) {
+                    if (!user.getCredentials().contains(url)) {
+                        user.getCredentials().add(url);
+                    }
+                }
+                // Marcar verificación del tutor si aún no está verificado y se validó al menos un documento académico
+                if (!user.isVerified()) {
+                    user.setVerified(true);
+                }
+                userRepository.save(user);
+            }
+
+            // Construir respuesta
+            Map<String, Object> response = new HashMap<>();
+            response.put("totalFiles", files.size());
+            response.put("uploaded", uploaded);
+            response.put("validated", validated);
+            response.put("rejected", rejected);
+            response.put("savedCredentials", validUrls);
+            response.put("details", results);
+            response.put("tutorVerified", user.isVerified());
+
+            return response;
+
+        } catch (UserServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new UserServiceException("Error al procesar credenciales: " + e.getMessage());
+        }
+    }
+
+    // =====================================================
+    // ACTUALIZAR ESTADO DE VERIFICACIÓN DEL TUTOR
+    // =====================================================
+    @Override
+    public Map<String, Object> deleteTutorCredentials(String token, List<String> urls) throws UserServiceException {
+        try {
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            String sub = userInfo.getSub();
+            User user = userRepository.findBySub(sub);
+            if (user == null) {
+                throw new UserServiceException("Usuario no encontrado");
+            }
+
+            boolean hasTutorRole = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
+            if (!hasTutorRole) {
+                throw new UserServiceException("El usuario no tiene el rol de tutor");
+            }
+
+            List<String> current = user.getCredentials();
+            if (current == null || current.isEmpty()) {
+                // Nada por eliminar; asegurar verificación acorde al estado actual
+                user.setVerified(false);
+                userRepository.save(user);
+                return Map.of(
+                        "removedCount", 0,
+                        "notFound", urls == null ? List.of() : urls,
+                        "remainingCredentials", List.of(),
+                        "tutorVerified", false
+                );
+            }
+
+            if (urls == null) {
+                urls = List.of();
+            }
+
+            List<String> notFound = new ArrayList<>();
+            List<String> removedUrls = new ArrayList<>();
+            for (String url : urls) {
+                if (current.remove(url)) {
+                    removedUrls.add(url);
+                } else {
+                    notFound.add(url);
+                }
+            }
+
+            int removed = removedUrls.size();
+
+            // Si ya no quedan credenciales, desverificar
+            if (current.isEmpty()) {
+                user.setVerified(false);
+            }
+
+            user.setCredentials(current);
+            userRepository.save(user);
+
+            // Intentar eliminar de Azure los blobs correspondientes a las URLs eliminadas
+            int deletedFromAzure = 0;
+            List<String> azureDeleteFailed = new ArrayList<>();
+            for (String u : removedUrls) {
+                try {
+                    boolean ok = azureBlobStorageService.deleteByUrl(u);
+                    if (ok) deletedFromAzure++; else azureDeleteFailed.add(u);
+                } catch (Exception ex) {
+                    azureDeleteFailed.add(u);
+                }
+            }
+
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("removedCount", removed);
+            resp.put("notFound", notFound);
+            resp.put("remainingCredentials", new ArrayList<>(current));
+            resp.put("tutorVerified", user.isVerified());
+            resp.put("deletedFromAzure", deletedFromAzure);
+            resp.put("azureDeleteFailed", azureDeleteFailed);
+            return resp;
+
+        } catch (UserServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new UserServiceException("Error al eliminar credenciales: " + e.getMessage());
+        }
+    }
+
+    // =====================================================
+    // ACTUALIZAR ESTADO DE VERIFICACIÓN DEL TUTOR
+    // =====================================================
+    @Override
+    public void updateTutorVerificationStatus(String userId, boolean isVerified) throws UserServiceException {
+        try {
+            User user = userRepository.findBySub(userId);
+            if (user == null) {
+                throw new UserServiceException("Usuario no encontrado");
+            }
+
+            // Verificar que el usuario tenga el rol de tutor
+            boolean hasTutorRole = user.getRole() != null && 
+                user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
+            
+            if (!hasTutorRole) {
+                throw new UserServiceException("El usuario no tiene el rol de tutor");
+            }
+
+            // Actualizar el estado de verificación
+            user.setVerified(isVerified);
+            userRepository.save(user);
+            
+        } catch (UserServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new UserServiceException("Error al actualizar estado de verificación: " + e.getMessage());
         }
     }
 
