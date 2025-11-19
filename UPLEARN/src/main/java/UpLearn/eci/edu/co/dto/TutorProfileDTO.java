@@ -19,4 +19,5 @@ public class TutorProfileDTO {
     private String bio;
     private List<String> specializations;
     private List<String> credentials;
+    private boolean isVerified = false;
 }

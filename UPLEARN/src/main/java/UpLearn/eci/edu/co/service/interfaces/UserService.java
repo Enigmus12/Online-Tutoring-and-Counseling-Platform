@@ -42,4 +42,18 @@ public interface UserService {
     // Método para verificar el estado de completitud del perfil
     ProfileStatusDTO getProfileStatus(String token, String role) throws UserServiceException;
 
+    // Subida, validación con n8n y guardado automático de credenciales
+    Map<String, Object> uploadAndValidateTutorCredentials(String token, List<org.springframework.web.multipart.MultipartFile> files) throws UserServiceException;
+
+    /**
+     * Elimina URLs de credenciales del tutor autenticado. Si al finalizar no quedan
+     * credenciales, el usuario queda como no verificado.
+     */
+    Map<String, Object> deleteTutorCredentials(String token, java.util.List<String> urls) throws UserServiceException;
+
+    // Actualizar estado de verificación del tutor
+    void updateTutorVerificationStatus(String userId, boolean isVerified) throws UserServiceException;
+
+    // (El método de validación individual fue eliminado para simplificar la lógica)
+
 }
