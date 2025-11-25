@@ -31,4 +31,7 @@ public class User {
     private List<String> specializations;
     private List<String> credentials;
     private boolean isVerified = false;
+
+    // Tarifa en tokens por hora (solo relevante si el usuario tiene rol TUTOR)
+    private Integer tokensPerHour; // null si no configurado aún
 }

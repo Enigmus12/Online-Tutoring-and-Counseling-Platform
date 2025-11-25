@@ -148,6 +148,30 @@ public class UserController {
     }
 
     /**
+     * Obtiene la tarifa de tokens por hora del tutor autenticado
+     */
+    @GetMapping("/tutor/tokens-rate")
+    public Map<String, Object> getTutorTokensRate(@RequestHeader("Authorization") String token) throws UserServiceException {
+        Integer rate = userService.getTutorTokensPerHour(token);
+        return Map.of("tokensPerHour", rate);
+    }
+
+    /**
+     * Obtiene la tarifa de tokens por hora de un tutor público por sub o id (sin token)
+     */
+    @GetMapping("/tutor/tokens-rate-by-sub")
+    public Map<String, Object> getTutorTokensRateBySub(
+            @RequestParam(value = "sub", required = false) String sub,
+            @RequestParam(value = "id", required = false) String id) throws UserServiceException {
+        String key = (sub != null && !sub.isBlank()) ? sub : id;
+        if (key == null || key.isBlank()) {
+            throw new UserServiceException("Debe proporcionar 'sub' o 'id'");
+        }
+        Integer rate = userService.getTutorTokensPerHourBySub(key);
+        return Map.of("tokensPerHour", rate);
+    }
+
+    /**
      * Actualiza el perfil específico de tutor
      * Solo permite editar campos relacionados con el rol de tutor
      */
