@@ -20,4 +20,5 @@ public class TutorProfileDTO {
     private List<String> specializations;
     private List<String> credentials;
     private boolean isVerified = false;
+    private Integer tokensPerHour; // Nueva tarifa de tokens por hora
 }

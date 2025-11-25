@@ -511,6 +511,7 @@ public class UserServiceImpl implements UserService {
             dto.setSpecializations(user.getSpecializations());
             dto.setCredentials(user.getCredentials());
             dto.setVerified(user.isVerified());
+            dto.setTokensPerHour(user.getTokensPerHour());
 
             return dto;
         } catch (UserServiceException e) {
@@ -556,6 +557,7 @@ public class UserServiceImpl implements UserService {
             if (tutorDTO.getBio() != null) user.setBio(tutorDTO.getBio());
             if (tutorDTO.getSpecializations() != null) user.setSpecializations(tutorDTO.getSpecializations());
             // Ya no se permite modificar 'credentials' desde este endpoint
+            if (tutorDTO.getTokensPerHour() != null) user.setTokensPerHour(tutorDTO.getTokensPerHour());
 
             User savedUser = userRepository.save(user);
 
@@ -570,6 +572,7 @@ public class UserServiceImpl implements UserService {
             updatedDTO.setSpecializations(savedUser.getSpecializations());
             updatedDTO.setCredentials(savedUser.getCredentials());
             updatedDTO.setVerified(savedUser.isVerified());
+            updatedDTO.setTokensPerHour(savedUser.getTokensPerHour());
 
             return updatedDTO;
         } catch (UserServiceException e) {
@@ -661,6 +664,7 @@ public class UserServiceImpl implements UserService {
         if (isTutor) {
             out.put("specializations", user.getSpecializations());
             out.put("credentials", user.getCredentials());
+            out.put("tokensPerHour", user.getTokensPerHour());
         }
         return out;
     }
@@ -1001,6 +1005,40 @@ public class UserServiceImpl implements UserService {
         } catch (Exception e) {
             throw new UserServiceException("Error al actualizar estado de verificación: " + e.getMessage());
         }
+
     }
 
+    // =====================================================
+    // OBTENER TARIFA DE TOKENS POR HORA DEL TUTOR AUTENTICADO
+    // =====================================================
+    @Override
+    public Integer getTutorTokensPerHour(String token) throws UserServiceException {
+        try {
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            String sub = userInfo.getSub();
+            User user = userRepository.findBySub(sub);
+            if (user == null) {
+                throw new UserServiceException("Usuario no encontrado");
+            }
+            boolean hasTutorRole = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
+            if (!hasTutorRole) {
+                throw new UserServiceException("El usuario no tiene el rol de tutor");
+            }
+            return user.getTokensPerHour();
+        } catch (UserServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new UserServiceException("Error al obtener tarifa de tokens: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public Integer getTutorTokensPerHourBySub(String sub) throws UserServiceException {
+        if (sub == null || sub.isBlank()) throw new UserServiceException("El parámetro 'sub' es requerido");
+        User user = userRepository.findBySub(sub);
+        if (user == null) throw new UserServiceException("Usuario no encontrado");
+        boolean hasTutorRole = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
+        if (!hasTutorRole) throw new UserServiceException("El usuario no tiene el rol de tutor");
+        return user.getTokensPerHour();
+    }
 }

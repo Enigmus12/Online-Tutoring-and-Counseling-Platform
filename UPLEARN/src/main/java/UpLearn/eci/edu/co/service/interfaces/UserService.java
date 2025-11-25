@@ -54,6 +54,9 @@ public interface UserService {
     // Actualizar estado de verificación del tutor
     void updateTutorVerificationStatus(String userId, boolean isVerified) throws UserServiceException;
 
-    // (El método de validación individual fue eliminado para simplificar la lógica)
+    // Obtener tarifa de tokens por hora del tutor autenticado
+    Integer getTutorTokensPerHour(String token) throws UserServiceException;
 
+    // Obtener tarifa de tokens por hora sin token, por sub/id de tutor
+    Integer getTutorTokensPerHourBySub(String sub) throws UserServiceException;
 }
