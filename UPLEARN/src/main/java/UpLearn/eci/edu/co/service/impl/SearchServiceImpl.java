@@ -30,16 +30,26 @@ public class SearchServiceImpl implements SearchService {
     public List<User> searchTutors(String query) throws UserServiceException {
         try {
             final String phrase = (query == null ? "" : query).trim().toLowerCase(Locale.ROOT);
+
             final Set<String> tokens = Arrays.stream(phrase.split("[^\\p{L}\\p{Nd}]+"))
                     .map(String::trim)
                     .filter(s -> s.length() >= 3)
                     .filter(s -> !STOPWORDS.contains(s))
                     .collect(Collectors.toCollection(LinkedHashSet::new));
-            // Obtener todos los usuarios
-            List<User> all = userRepository.findAll();
 
-            return all.stream()
-                    .filter(u -> u.getRole() != null && u.getRole().stream().anyMatch("TUTOR"::equalsIgnoreCase))
+            List<User> allTutors = userRepository.findAll().stream()
+                    .filter(u -> u.getRole() != null &&
+                            u.getRole().stream().anyMatch("TUTOR"::equalsIgnoreCase))
+                    .toList();
+
+            if (phrase.isBlank() && tokens.isEmpty()) {
+                return allTutors.stream()
+                        .sorted(Comparator.comparing(
+                                u -> Optional.ofNullable(u.getName()).orElse("")))
+                        .toList();
+            }
+
+            return allTutors.stream()
                     .map(u -> new AbstractMap.SimpleEntry<>(u, scoreTutor(u, phrase, tokens)))
                     .filter(e -> e.getValue() > 0)
                     .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
