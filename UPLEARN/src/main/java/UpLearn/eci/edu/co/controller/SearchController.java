@@ -35,4 +35,16 @@ public class SearchController {
             throws UserServiceException {
         return searchService.searchTutors(q);
     }
+
+    /**
+     * Endpoint para obtener los 10 mejores tutores
+     * Ordenados por cantidad de credenciales y especializaciones
+     * 
+     * @return Lista de los 10 mejores tutores disponibles
+     * @throws UserServiceException en caso de error durante la búsqueda
+     */
+    @GetMapping("/tutors/top")
+    public List<User> getTopTutors() throws UserServiceException {
+        return searchService.getTopTutors();
+    }
 }

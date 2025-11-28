@@ -112,4 +112,46 @@ public class SearchServiceImpl implements SearchService {
         }
         return s;
     }
+
+    /** Obtiene los 10 mejores tutores ordenados por credenciales y especializaciones */
+    @Override
+    public List<User> getTopTutors() throws UserServiceException {
+        try {
+            List<User> allTutors = userRepository.findAll().stream()
+                    .filter(u -> u.getRole() != null &&
+                            u.getRole().stream().anyMatch("TUTOR"::equalsIgnoreCase))
+                    .toList();
+
+            return allTutors.stream()
+                    .sorted((a, b) -> {
+                        // Primero por cantidad de credenciales (descendente)
+                        int credentialsA = Optional.ofNullable(a.getCredentials())
+                                .map(List::size)
+                                .orElse(0);
+                        int credentialsB = Optional.ofNullable(b.getCredentials())
+                                .map(List::size)
+                                .orElse(0);
+                        
+                        int credentialsCompare = Integer.compare(credentialsB, credentialsA);
+                        if (credentialsCompare != 0) {
+                            return credentialsCompare;
+                        }
+                        
+                        // Si tienen las mismas credenciales, ordenar por especializaciones
+                        int specializationsA = Optional.ofNullable(a.getSpecializations())
+                                .map(List::size)
+                                .orElse(0);
+                        int specializationsB = Optional.ofNullable(b.getSpecializations())
+                                .map(List::size)
+                                .orElse(0);
+                        
+                        return Integer.compare(specializationsB, specializationsA);
+                    })
+                    .limit(10)
+                    .toList();
+
+        } catch (Exception e) {
+            throw new UserServiceException("Error obteniendo los mejores tutores: " + e.getMessage());
+        }
+    }
 }
