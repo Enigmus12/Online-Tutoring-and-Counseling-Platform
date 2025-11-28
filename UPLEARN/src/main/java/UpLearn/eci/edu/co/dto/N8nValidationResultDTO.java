@@ -13,4 +13,5 @@ public class N8nValidationResultDTO {
     private String fechaEmision;
     private String nivel;
     private int confianza;
+    private String especialidad; // Nuevo campo devuelto por n8n para especialización del documento
 }

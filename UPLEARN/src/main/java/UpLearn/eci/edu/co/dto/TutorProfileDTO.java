@@ -2,6 +2,7 @@ package UpLearn.eci.edu.co.dto;
 
 import lombok.Data;
 import java.util.List;
+import UpLearn.eci.edu.co.model.Specialization;
 
 @Data
 public class TutorProfileDTO {
@@ -17,7 +18,7 @@ public class TutorProfileDTO {
 
     // Campos específicos de tutor
     private String bio;
-    private List<String> specializations;
+    private List<Specialization> specializations; // Cambiado a objeto con metadatos
     private List<String> credentials;
     private boolean isVerified = false;
     private Integer tokensPerHour; // Nueva tarifa de tokens por hora

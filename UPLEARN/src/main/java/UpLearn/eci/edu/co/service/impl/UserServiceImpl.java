@@ -1,5 +1,6 @@
 package UpLearn.eci.edu.co.service.impl;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -20,6 +21,7 @@ import UpLearn.eci.edu.co.dto.ProfileStatusDTO;
 import UpLearn.eci.edu.co.dto.StudentProfileDTO;
 import UpLearn.eci.edu.co.dto.TutorProfileDTO;
 import UpLearn.eci.edu.co.dto.N8nValidationResultDTO;
+import UpLearn.eci.edu.co.model.Specialization;
 import UpLearn.eci.edu.co.model.User;
 import UpLearn.eci.edu.co.service.interfaces.UserRepository;
 import UpLearn.eci.edu.co.service.interfaces.UserService;
@@ -555,7 +557,40 @@ public class UserServiceImpl implements UserService {
             if (tutorDTO.getIdType() != null) user.setIdType(tutorDTO.getIdType());
             if (tutorDTO.getIdNumber() != null) user.setIdNumber(tutorDTO.getIdNumber());
             if (tutorDTO.getBio() != null) user.setBio(tutorDTO.getBio());
-            if (tutorDTO.getSpecializations() != null) user.setSpecializations(tutorDTO.getSpecializations());
+            
+            // Manejar especializaciones: mantener las verificadas, agregar/actualizar manuales
+            if (tutorDTO.getSpecializations() != null) {
+                List<Specialization> newSpecializations = new ArrayList<>();
+                
+                // Mantener especializaciones verificadas existentes
+                if (user.getSpecializations() != null) {
+                    for (Specialization existing : user.getSpecializations()) {
+                        if (existing.isVerified()) {
+                            newSpecializations.add(existing);
+                        }
+                    }
+                }
+                
+                // Agregar las especializaciones del DTO (pueden ser nuevas manuales o actualizaciones)
+                for (Specialization incomingSpec : tutorDTO.getSpecializations()) {
+                    // Solo agregar si es manual y no existe ya
+                    if (!incomingSpec.isVerified()) {
+                        boolean exists = newSpecializations.stream()
+                                .anyMatch(s -> s.getName().equalsIgnoreCase(incomingSpec.getName()));
+                        if (!exists) {
+                            // Asegurar que tenga los campos correctos para especializaciones manuales
+                            incomingSpec.setVerified(false);
+                            incomingSpec.setSource("MANUAL");
+                            incomingSpec.setVerifiedAt(null);
+                            incomingSpec.setDocumentUrl(null);
+                            newSpecializations.add(incomingSpec);
+                        }
+                    }
+                }
+                
+                user.setSpecializations(newSpecializations);
+            }
+            
             // Ya no se permite modificar 'credentials' desde este endpoint
             if (tutorDTO.getTokensPerHour() != null) user.setTokensPerHour(tutorDTO.getTokensPerHour());
 
@@ -840,6 +875,31 @@ public class UserServiceImpl implements UserService {
                         validated++;
                         fileResult.put("saved", true);
                         fileResult.put("status", "accepted");
+                        
+                        // Añadir especialidad al perfil del tutor si viene en la respuesta y no está repetida
+                        String especialidadName = validationResult.getEspecialidad();
+                        if (especialidadName != null && !especialidadName.isBlank()) {
+                            if (user.getSpecializations() == null) {
+                                user.setSpecializations(new ArrayList<>());
+                            }
+                            
+                            // Verificar si ya existe una especialización con ese nombre
+                            boolean exists = user.getSpecializations().stream()
+                                    .anyMatch(s -> s.getName().equalsIgnoreCase(especialidadName));
+                            
+                            if (!exists) {
+                                // Crear objeto Specialization verificado por IA
+                                Specialization newSpec = new Specialization();
+                                newSpec.setName(especialidadName);
+                                newSpec.setVerified(true);
+                                newSpec.setSource("AI_VALIDATION");
+                                newSpec.setVerifiedAt(Instant.now().toString());
+                                newSpec.setDocumentUrl(fileUrl);
+                                
+                                user.getSpecializations().add(newSpec);
+                                fileResult.put("addedSpecialization", especialidadName);
+                            }
+                        }
                     } else {
                         rejected++;
                         fileResult.put("saved", false);
@@ -941,6 +1001,21 @@ public class UserServiceImpl implements UserService {
 
             int removed = removedUrls.size();
 
+            // Eliminar especializaciones vinculadas a las URLs eliminadas
+            List<String> removedSpecializations = new ArrayList<>();
+            if (user.getSpecializations() != null && !user.getSpecializations().isEmpty()) {
+                List<Specialization> remainingSpecs = new ArrayList<>();
+                for (Specialization spec : user.getSpecializations()) {
+                    // Mantener especializaciones manuales o las que no estén vinculadas a URLs eliminadas
+                    if (!spec.isVerified() || !removedUrls.contains(spec.getDocumentUrl())) {
+                        remainingSpecs.add(spec);
+                    } else {
+                        removedSpecializations.add(spec.getName());
+                    }
+                }
+                user.setSpecializations(remainingSpecs);
+            }
+
             // Si ya no quedan credenciales, desverificar
             if (current.isEmpty()) {
                 user.setVerified(false);
@@ -968,6 +1043,7 @@ public class UserServiceImpl implements UserService {
             resp.put("tutorVerified", user.isVerified());
             resp.put("deletedFromAzure", deletedFromAzure);
             resp.put("azureDeleteFailed", azureDeleteFailed);
+            resp.put("removedSpecializations", removedSpecializations); // Especializaciones eliminadas automáticamente
             return resp;
 
         } catch (UserServiceException e) {
