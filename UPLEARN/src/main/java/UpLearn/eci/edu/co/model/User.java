@@ -7,12 +7,14 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 import org.springframework.data.annotation.Id;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 public class User {
     @Id
+    @JsonProperty("userId")
     private String sub; // ID único de Cognito (sub claim)
     private String name;
     private String email;

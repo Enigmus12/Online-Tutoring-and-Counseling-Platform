@@ -7,5 +7,6 @@ import UpLearn.eci.edu.co.model.User;
 
 public interface SearchService {
     List<User> searchTutors(String query) throws UserServiceException;
-
+    
+    List<User> getTopTutors() throws UserServiceException;
 }
