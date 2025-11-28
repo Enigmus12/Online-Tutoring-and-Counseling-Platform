@@ -28,7 +28,7 @@ public class User {
 
     // Perfil de tutor
     private String bio;
-    private List<String> specializations;
+    private List<Specialization> specializations; // Cambiado a objeto con metadatos de verificación
     private List<String> credentials;
     private boolean isVerified = false;
 

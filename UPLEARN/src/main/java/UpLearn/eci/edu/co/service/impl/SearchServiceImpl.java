@@ -3,6 +3,7 @@ package UpLearn.eci.edu.co.service.impl;
 import org.springframework.stereotype.Service;
 
 import UpLearn.eci.edu.co.config.UserServiceException;
+import UpLearn.eci.edu.co.model.Specialization;
 import UpLearn.eci.edu.co.model.User;
 import UpLearn.eci.edu.co.service.interfaces.SearchService;
 import UpLearn.eci.edu.co.service.interfaces.UserRepository;
@@ -70,7 +71,13 @@ public class SearchServiceImpl implements SearchService {
     private int scoreTutor(User u, String phrase, Set<String> tokens) {
         String name = safe(u.getName());
         String bio = safe(u.getBio());
-        List<String> specsList = (u.getSpecializations() == null) ? List.of() : u.getSpecializations();
+        
+        // Extraer nombres de especializaciones del objeto Specialization
+        List<Specialization> specializationObjs = (u.getSpecializations() == null) ? List.of() : u.getSpecializations();
+        List<String> specsList = specializationObjs.stream()
+                .map(Specialization::getName)
+                .filter(Objects::nonNull)
+                .toList();
         String specs = safe(String.join(" ", specsList));
 
         return scorePhraseBonus(phrase, name, bio, specs) + scoreTokenBonus(tokens, name, bio, specsList);
