@@ -5,6 +5,10 @@ target/
 !**/src/test/**/target/
 .env
 
+### Docker ###
+*.tar
+uplearn-backend.tar
+
 ### STS ###
 .apt_generated
 .classpath
