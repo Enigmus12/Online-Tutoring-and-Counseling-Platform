@@ -1,0 +1,11 @@
+services:
+  uplearn-backend:
+    image: user-service:latest
+    container_name: uplearn-backend
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      - SPRING_PROFILES_ACTIVE=production
+    env_file:
+      - .env
