@@ -1,24 +1,33 @@
-# Usa una imagen de Maven para compilar la aplicación
+# Build stage
 FROM maven:3.9-eclipse-temurin-17 AS build
+
 WORKDIR /app
 
-# Copia el pom.xml y descarga las dependencias
+# Copy pom.xml first to cache dependencies
 COPY pom.xml .
+
+# Download dependencies
 RUN mvn dependency:go-offline -B
 
-# Copia el código fuente y compila la aplicación
+# Copy source code
 COPY src ./src
+
+# Build the application
 RUN mvn clean package -DskipTests
 
-# Usa una imagen ligera de JRE para ejecutar la aplicación
+# Production stage
 FROM eclipse-temurin:17-jre-alpine
+
 WORKDIR /app
 
-# Copia el JAR compilado desde la etapa de build
+# Copy the built jar from build stage
 COPY --from=build /app/target/*.jar app.jar
 
-# Expone el puerto 8080
+# Copy environment variables
+COPY .env .env
+
+# Expose port 8080
 EXPOSE 8080
 
-# Comando para ejecutar la aplicación
+# Run the application
 ENTRYPOINT ["java", "-jar", "app.jar"]
