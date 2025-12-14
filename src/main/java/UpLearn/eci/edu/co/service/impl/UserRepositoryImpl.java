@@ -12,8 +12,12 @@ import UpLearn.eci.edu.co.model.User;
 
 @Service
 public class UserRepositoryImpl implements UserRepository {
+    private final UserMongoRepository userMongoRepository;
+
     @Autowired
-    private UserMongoRepository userMongoRepository;
+    public UserRepositoryImpl(UserMongoRepository userMongoRepository) {
+        this.userMongoRepository = userMongoRepository;
+    }
 
     @Override
     public List<User> findAll() {
