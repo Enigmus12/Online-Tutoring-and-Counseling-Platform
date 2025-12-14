@@ -35,6 +35,7 @@ public class SecurityConfig {
                         .requestMatchers("/Api-user/public/**").permitAll()
                         .requestMatchers("/Api-search/**").permitAll()
                         .requestMatchers("/Api-user/**").authenticated()
+                        .requestMatchers("/Api-user/public/profile").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
