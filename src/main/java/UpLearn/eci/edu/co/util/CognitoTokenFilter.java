@@ -81,6 +81,7 @@ public class CognitoTokenFilter extends OncePerRequestFilter {
         return requestPath.equals("/Api-user/process-cognito-user") ||
                requestPath.equals("/Api-user/users") ||
                requestPath.equals("/Api-user/public/") ||   
-               requestPath.startsWith("/Api-search/");
+               requestPath.startsWith("/Api-search/") ||
+               requestPath.equals("/Api-user/public/profile");
     }
 }
