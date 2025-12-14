@@ -823,6 +823,10 @@ public class UserServiceImpl implements UserService {
             if (validationResult.isValid()) {
                 fileResult.put(SAVED_KEY, true);
                 fileResult.put(STATUS_KEY, "accepted");
+
+                result.validated++;
+                result.validUrls.add(fileUrl);
+
                 addSpecializationIfNeeded(user, validationResult, fileUrl, fileResult);
             } else {
                 result.rejected++;
@@ -830,6 +834,7 @@ public class UserServiceImpl implements UserService {
                 fileResult.put(STATUS_KEY, "rejected");
                 fileResult.put("reason", validationResult.getMotivoNoValido());
             }
+
         } catch (Exception e) {
             fileResult.put(UPLOADED_KEY, false);
             fileResult.put(SAVED_KEY, false);
@@ -918,8 +923,9 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-    private Map<String, Object> buildUploadValidationResponse(int totalFiles, UploadValidationResult result,
-            boolean tutorVerified) {
+    private Map<String, Object> buildUploadValidationResponse(
+            int totalFiles, UploadValidationResult result, boolean tutorVerified) {
+
         Map<String, Object> response = new HashMap<>();
         response.put("totalFiles", totalFiles);
         response.put(UPLOADED_KEY, result.uploaded);
@@ -927,6 +933,9 @@ public class UserServiceImpl implements UserService {
         response.put("rejected", result.rejected);
         response.put("details", result.results);
         response.put(TUTOR_VERIFIED_KEY, tutorVerified);
+
+        response.put("savedCredentials", new ArrayList<>(result.validUrls));
+
         return response;
     }
 
@@ -1039,7 +1048,7 @@ public class UserServiceImpl implements UserService {
     }
 
     private Map<String, Object> buildDeleteTutorCredentialsResponse(RemovalResult removalResult, List<String> current,
-                                                                   User user, AzureRemovalResult azureResult) {
+            User user, AzureRemovalResult azureResult) {
         Map<String, Object> resp = new HashMap<>();
         resp.put("removedCount", removalResult.removedUrls.size());
         resp.put("remainingCredentials", new ArrayList<>(current));
