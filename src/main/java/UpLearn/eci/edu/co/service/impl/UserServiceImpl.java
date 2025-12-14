@@ -6,7 +6,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.http.HttpEntity;
@@ -31,30 +30,41 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class UserServiceImpl implements UserService {
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private CognitoTokenDecoder cognitoTokenDecoder;
-
-    @Autowired
-    private AzureBlobStorageService azureBlobStorageService;
-
-    @Value("${n8n.webhook.url}")
-    private String n8nWebhookUrl;
+    private static final String BEARER_PREFIX = "Bearer ";
+    private static final String USER_DELETED_KEY = "userDeleted";
+    private static final String EMAIL_KEY = "email";
+    private static final String ROLES_KEY = "roles";
+    private static final String MESSAGE_KEY = "message";
+    private static final String ROLE_STUDENT = "STUDENT";
+    private static final String ROLE_TUTOR = "TUTOR";
+    private static final String UPLOADED_KEY = "uploaded";
+    private final UserRepository userRepository;
+    private final CognitoTokenDecoder cognitoTokenDecoder;
+    private final AzureBlobStorageService azureBlobStorageService;
 
     @Override
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }
 
+    @Value("${n8n.webhook.url}")
+    private String n8nWebhookUrl;
+
+    public UserServiceImpl(
+            UserRepository userRepository,
+            CognitoTokenDecoder cognitoTokenDecoder,
+            AzureBlobStorageService azureBlobStorageService) {
+        this.userRepository = userRepository;
+        this.cognitoTokenDecoder = cognitoTokenDecoder;
+        this.azureBlobStorageService = azureBlobStorageService;
+    }
+
     @Override
     public void deleteUserByToken(String token) throws UserServiceException {
         try {
-            // Extraer información del token de Cognito
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
+
             User user = userRepository.findBySub(sub);
             if (user == null) {
                 throw new UserServiceException("Usuario no encontrado");
@@ -109,8 +119,9 @@ public class UserServiceImpl implements UserService {
             newUser.setName(userInfo.getName());
             newUser.setEmail(userInfo.getEmail());
             newUser.setPhoneNumber(userInfo.getPhoneNumber());
-            
-            // Asignar roles si se proporcionan, sino dejar vacío para que el frontend los asigne
+
+            // Asignar roles si se proporcionan, sino dejar vacío para que el frontend los
+            // asigne
             if (cognitoTokenDTO.getRole() != null && !cognitoTokenDTO.getRole().isEmpty()) {
                 newUser.setRole(cognitoTokenDTO.getRole());
             } else {
@@ -127,52 +138,51 @@ public class UserServiceImpl implements UserService {
 
     /**
      * Procesa completamente un usuario de Cognito y retorna la respuesta del API
-     * Este método encapsula toda la lógica de negocio para el endpoint process-cognito-user
+     * Este método encapsula toda la lógica de negocio para el endpoint
+     * process-cognito-user
      */
     @Override
     public Map<String, Object> processCognitoUserComplete(CognitoTokenDTO cognitoTokenDTO) throws UserServiceException {
         // 1. Verificar si el usuario ya existe
         boolean isNewUser = !existsUserBySub(cognitoTokenDTO);
-        
+
         // 2. Procesar el usuario (crear o actualizar)
         User user = processUserFromCognito(cognitoTokenDTO);
-        
+
         // 3. Construir la respuesta del API
         Map<String, Object> response = new HashMap<>();
-        
+
         // Crear objeto user con los campos requeridos por el frontend
         Map<String, Object> userResponse = new HashMap<>();
-        userResponse.put("id", user.getSub());  // ID único de Cognito
-        userResponse.put("email", user.getEmail());  // Email del usuario
-        
+        userResponse.put("id", user.getSub()); // ID único de Cognito
+        userResponse.put(EMAIL_KEY, user.getEmail()); // Email del usuario
         // Lógica de roles: null indica que el frontend debe mostrar selección
         if (user.getRole() == null || user.getRole().isEmpty()) {
-            userResponse.put("roles", null);  // Trigger para selección de roles
+            userResponse.put(ROLES_KEY, null); // Trigger para selección de roles
         } else {
-            userResponse.put("roles", user.getRole());  // Roles ya asignados
+            userResponse.put(ROLES_KEY, user.getRole()); // Roles ya asignados
         }
-        
+
         response.put("user", userResponse);
-        response.put("isNewUser", isNewUser);  // Flag para el frontend
-        
+        response.put("isNewUser", isNewUser); // Flag para el frontend
+
         return response;
     }
 
     /**
      * Guarda roles de usuario y retorna la respuesta completa del API
-     * Este método encapsula toda la lógica de negocio para el endpoint save-user-role
+     * Este método encapsula toda la lógica de negocio para el endpoint
+     * save-user-role
      */
     @Override
     public Map<String, Object> saveUserRoleComplete(String token, List<String> roles) throws UserServiceException {
         // 1. Actualizar roles del usuario
         User user = updateUserRoles(token, roles);
-        
-        // 2. Construir respuesta del API con datos actualizados
         Map<String, Object> response = new HashMap<>();
         response.put("id", user.getSub());
-        response.put("email", user.getEmail());
-        response.put("roles", user.getRole());  // Roles recién guardados
-        
+        response.put(EMAIL_KEY, user.getEmail());
+        response.put(ROLES_KEY, user.getRole()); // Roles recién guardados
+
         return response;
     }
 
@@ -209,9 +219,9 @@ public class UserServiceImpl implements UserService {
             }
 
             // Extraer información del token de Cognito
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
+
             User user = userRepository.findBySub(sub);
             if (user == null) {
                 throw new UserServiceException("Usuario no encontrado");
@@ -227,44 +237,44 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public Map<String, Object> addRoleToUserComplete(String token, String userId, String newRole) throws UserServiceException {
+    public Map<String, Object> addRoleToUserComplete(String token, String userId, String newRole)
+            throws UserServiceException {
         try {
             // Validar que el usuario esté autenticado (verificamos que el token sea válido)
-            cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
-            
+            cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
+            cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
+
             // Buscar el usuario por ID
             User targetUser = userRepository.findBySub(userId);
             if (targetUser == null) {
                 throw new UserServiceException("Usuario no encontrado con ID: " + userId);
             }
-            
+
             // Obtener roles actuales o crear lista vacía si no tiene
             List<String> currentRoles = targetUser.getRole();
             if (currentRoles == null) {
                 currentRoles = new ArrayList<>();
             }
-            
+
             // Verificar si el rol ya existe
             if (currentRoles.contains(newRole)) {
                 throw new UserServiceException("El usuario ya tiene el rol: " + newRole);
             }
-            
+
             // Añadir el nuevo rol
             currentRoles.add(newRole);
             targetUser.setRole(currentRoles);
-            
+
             // Guardar los cambios
             User updatedUser = userRepository.save(targetUser);
-            
-            // Construir respuesta
+
             Map<String, Object> response = new HashMap<>();
             response.put("id", updatedUser.getSub());
-            response.put("email", updatedUser.getEmail());
-            response.put("roles", updatedUser.getRole());
-            response.put("message", "Rol '" + newRole + "' añadido exitosamente");
-            
+            response.put(EMAIL_KEY, updatedUser.getEmail());
+            response.put(ROLES_KEY, updatedUser.getRole());
+            response.put(MESSAGE_KEY, "Rol '" + newRole + "' añadido exitosamente");
+
             return response;
-            
         } catch (UserServiceException e) {
             throw e;
         } catch (Exception e) {
@@ -276,25 +286,24 @@ public class UserServiceImpl implements UserService {
     public Map<String, Object> getUserRolesComplete(String token) throws UserServiceException {
         try {
             // Extraer información del usuario desde el token
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
+
             // Buscar el usuario en la base de datos
             User user = userRepository.findBySub(sub);
             if (user == null) {
                 throw new UserServiceException("Usuario no encontrado");
             }
-            
-            // Construir respuesta
+
             Map<String, Object> response = new HashMap<>();
             response.put("id", user.getSub());
-            response.put("email", user.getEmail());
+            response.put(EMAIL_KEY, user.getEmail());
             response.put("name", user.getName());
-            response.put("roles", user.getRole() != null ? user.getRole() : new ArrayList<>());
+            response.put(ROLES_KEY, user.getRole() != null ? user.getRole() : new ArrayList<>());
             response.put("hasRoles", user.getRole() != null && !user.getRole().isEmpty());
-            
+
             return response;
-            
+
         } catch (UserServiceException e) {
             throw e;
         } catch (Exception e) {
@@ -302,33 +311,32 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-    // 
+    //
     // MÉTODOS ESPECÍFICOS PARA PERFILES DE ESTUDIANTE
-    // 
+    //
 
     @Override
     public StudentProfileDTO getStudentProfile(String token) throws UserServiceException {
         try {
             // Extraer información del token de Cognito
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
+
             User user = userRepository.findBySub(sub);
             if (user == null) {
                 throw new UserServiceException("Usuario no encontrado");
             }
-
             // Verificar que el usuario tenga el rol de estudiante (case-insensitive)
             boolean hasStudentRole = false;
             if (user.getRole() != null) {
                 for (String role : user.getRole()) {
-                    if ("STUDENT".equalsIgnoreCase(role)) {
+                    if (ROLE_STUDENT.equalsIgnoreCase(role)) {
                         hasStudentRole = true;
                         break;
                     }
                 }
             }
-            
+
             if (!hasStudentRole) {
                 throw new UserServiceException("El usuario no tiene el rol de estudiante");
             }
@@ -351,52 +359,25 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public StudentProfileDTO updateStudentProfile(String token, StudentProfileDTO studentDTO) throws UserServiceException {
+    public StudentProfileDTO updateStudentProfile(String token, StudentProfileDTO studentDTO)
+            throws UserServiceException {
         try {
-            // Extraer información del token de Cognito
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
+
             User user = userRepository.findBySub(sub);
             if (user == null) {
                 throw new UserServiceException("Usuario no encontrado");
             }
-
-            // Verificar que el usuario tenga el rol de estudiante (case-insensitive)
-            boolean hasStudentRole = false;
-            if (user.getRole() != null) {
-                for (String role : user.getRole()) {
-                    if ("STUDENT".equalsIgnoreCase(role)) {
-                        hasStudentRole = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (!hasStudentRole) {
+            if (!hasRole(user, ROLE_STUDENT)) {
                 throw new UserServiceException("El usuario no tiene el rol de estudiante");
             }
 
-            // Actualizar solo campos permitidos para estudiante
-            if (studentDTO.getName() != null) user.setName(studentDTO.getName());
-            if (studentDTO.getEmail() != null) user.setEmail(studentDTO.getEmail());
-            if (studentDTO.getPhoneNumber() != null) user.setPhoneNumber(studentDTO.getPhoneNumber());
-            if (studentDTO.getIdType() != null) user.setIdType(studentDTO.getIdType());
-            if (studentDTO.getIdNumber() != null) user.setIdNumber(studentDTO.getIdNumber());
-            if (studentDTO.getEducationLevel() != null) user.setEducationLevel(studentDTO.getEducationLevel());
+            updateStudentFields(user, studentDTO);
 
             User savedUser = userRepository.save(user);
 
-            // Retornar DTO actualizado
-            StudentProfileDTO updatedDTO = new StudentProfileDTO();
-            updatedDTO.setName(savedUser.getName());
-            updatedDTO.setEmail(savedUser.getEmail());
-            updatedDTO.setPhoneNumber(savedUser.getPhoneNumber());
-            updatedDTO.setIdType(savedUser.getIdType());
-            updatedDTO.setIdNumber(savedUser.getIdNumber());
-            updatedDTO.setEducationLevel(savedUser.getEducationLevel());
-
-            return updatedDTO;
+            return buildStudentProfileDTO(savedUser);
         } catch (UserServiceException e) {
             throw e;
         } catch (Exception e) {
@@ -404,71 +385,95 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    private boolean hasRole(User user, String roleName) {
+        if (user.getRole() == null)
+            return false;
+        for (String role : user.getRole()) {
+            if (roleName.equalsIgnoreCase(role)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void updateStudentFields(User user, StudentProfileDTO studentDTO) {
+        if (studentDTO.getName() != null)
+            user.setName(studentDTO.getName());
+        if (studentDTO.getEmail() != null)
+            user.setEmail(studentDTO.getEmail());
+        if (studentDTO.getPhoneNumber() != null)
+            user.setPhoneNumber(studentDTO.getPhoneNumber());
+        if (studentDTO.getIdType() != null)
+            user.setIdType(studentDTO.getIdType());
+        if (studentDTO.getIdNumber() != null)
+            user.setIdNumber(studentDTO.getIdNumber());
+        if (studentDTO.getEducationLevel() != null)
+            user.setEducationLevel(studentDTO.getEducationLevel());
+    }
+
+    private StudentProfileDTO buildStudentProfileDTO(User user) {
+        StudentProfileDTO dto = new StudentProfileDTO();
+        dto.setName(user.getName());
+        dto.setEmail(user.getEmail());
+        dto.setPhoneNumber(user.getPhoneNumber());
+        dto.setIdType(user.getIdType());
+        dto.setIdNumber(user.getIdNumber());
+        dto.setEducationLevel(user.getEducationLevel());
+        return dto;
+    }
+
     @Override
     public Map<String, Object> removeStudentRole(String token) throws UserServiceException {
         try {
-            // Extraer información del token de Cognito
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
             User user = userRepository.findBySub(sub);
             if (user == null) {
                 throw new UserServiceException("Usuario no encontrado");
             }
 
-            // Verificar que el usuario tenga el rol de estudiante (case-insensitive)
-            boolean hasStudentRole = false;
-            if (user.getRole() != null) {
-                for (String role : user.getRole()) {
-                    if ("STUDENT".equalsIgnoreCase(role)) {
-                        hasStudentRole = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (!hasStudentRole) {
+            if (!hasRole(user, ROLE_STUDENT)) {
                 throw new UserServiceException("El usuario no tiene el rol de estudiante");
             }
+            List<String> updatedRoles = removeRoleFromUser(user, ROLE_STUDENT);
 
-            // Remover el rol de estudiante de la lista (case-insensitive)
-            List<String> updatedRoles = new ArrayList<>();
-            if (user.getRole() != null) {
-                for (String role : user.getRole()) {
-                    if (!"STUDENT".equalsIgnoreCase(role)) {
-                        updatedRoles.add(role);
-                    }
-                }
-            }
-            
             // Limpiar campos específicos de estudiante
             user.setEducationLevel(null);
-            
             user.setRole(updatedRoles);
 
-            // Si ya no tiene roles, eliminar completamente el usuario
             if (updatedRoles.isEmpty()) {
                 userRepository.deleteBySub(sub);
-                
-                Map<String, Object> response = new HashMap<>();
-                response.put("message", "Perfil de estudiante eliminado. Usuario completamente eliminado.");
-                response.put("userDeleted", true);
-                return response;
+                return buildRemoveStudentRoleResponse(true, null);
             } else {
-                // Solo actualizar el usuario removiendo el rol
                 User savedUser = userRepository.save(user);
-                
-                Map<String, Object> response = new HashMap<>();
-                response.put("message", "Rol de estudiante eliminado exitosamente");
-                response.put("userDeleted", false);
-                response.put("remainingRoles", savedUser.getRole());
-                return response;
+                return buildRemoveStudentRoleResponse(false, savedUser.getRole());
             }
         } catch (UserServiceException e) {
             throw e;
         } catch (Exception e) {
             throw new UserServiceException("Error al eliminar rol de estudiante: " + e.getMessage());
         }
+    }
+
+    private List<String> removeRoleFromUser(User user, String roleToRemove) {
+        List<String> updatedRoles = new ArrayList<>();
+        if (user.getRole() != null) {
+            for (String role : user.getRole()) {
+                if (!roleToRemove.equalsIgnoreCase(role)) {
+                    updatedRoles.add(role);
+                }
+            }
+        }
+        return updatedRoles;
+    }
+
+    private Map<String, Object> buildRemoveStudentRoleResponse(boolean userDeleted, List<String> remainingRoles) {
+        Map<String, Object> response = new HashMap<>();
+        response.put(USER_DELETED_KEY, userDeleted);
+        if (!userDeleted) {
+            response.put("remainingRoles", remainingRoles);
+        }
+        return response;
     }
 
     // =====================================================
@@ -479,25 +484,24 @@ public class UserServiceImpl implements UserService {
     public TutorProfileDTO getTutorProfile(String token) throws UserServiceException {
         try {
             // Extraer información del token de Cognito
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
+
             User user = userRepository.findBySub(sub);
             if (user == null) {
                 throw new UserServiceException("Usuario no encontrado");
             }
-
             // Verificar que el usuario tenga el rol de tutor (case-insensitive)
             boolean hasTutorRole = false;
             if (user.getRole() != null) {
                 for (String role : user.getRole()) {
-                    if ("TUTOR".equalsIgnoreCase(role)) {
+                    if (ROLE_TUTOR.equalsIgnoreCase(role)) {
                         hasTutorRole = true;
                         break;
                     }
                 }
             }
-            
+
             if (!hasTutorRole) {
                 throw new UserServiceException("El usuario no tiene el rol de tutor");
             }
@@ -526,90 +530,18 @@ public class UserServiceImpl implements UserService {
     @Override
     public TutorProfileDTO updateTutorProfile(String token, TutorProfileDTO tutorDTO) throws UserServiceException {
         try {
-            // Extraer información del token de Cognito
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
             User user = userRepository.findBySub(sub);
-            if (user == null) {
-                throw new UserServiceException("Usuario no encontrado");
-            }
+            validateTutorUser(user);
 
-            // Verificar que el usuario tenga el rol de tutor (case-insensitive)
-            boolean hasTutorRole = false;
-            if (user.getRole() != null) {
-                for (String role : user.getRole()) {
-                    if ("TUTOR".equalsIgnoreCase(role)) {
-                        hasTutorRole = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (!hasTutorRole) {
-                throw new UserServiceException("El usuario no tiene el rol de tutor");
-            }
-
-            // Actualizar solo campos permitidos para tutor
-            if (tutorDTO.getName() != null) user.setName(tutorDTO.getName());
-            if (tutorDTO.getEmail() != null) user.setEmail(tutorDTO.getEmail());
-            if (tutorDTO.getPhoneNumber() != null) user.setPhoneNumber(tutorDTO.getPhoneNumber());
-            if (tutorDTO.getIdType() != null) user.setIdType(tutorDTO.getIdType());
-            if (tutorDTO.getIdNumber() != null) user.setIdNumber(tutorDTO.getIdNumber());
-            if (tutorDTO.getBio() != null) user.setBio(tutorDTO.getBio());
-            
-            // Manejar especializaciones: mantener las verificadas, agregar/actualizar manuales
-            if (tutorDTO.getSpecializations() != null) {
-                List<Specialization> newSpecializations = new ArrayList<>();
-                
-                // Mantener especializaciones verificadas existentes
-                if (user.getSpecializations() != null) {
-                    for (Specialization existing : user.getSpecializations()) {
-                        if (existing.isVerified()) {
-                            newSpecializations.add(existing);
-                        }
-                    }
-                }
-                
-                // Agregar las especializaciones del DTO (pueden ser nuevas manuales o actualizaciones)
-                for (Specialization incomingSpec : tutorDTO.getSpecializations()) {
-                    // Solo agregar si es manual y no existe ya
-                    if (!incomingSpec.isVerified()) {
-                        boolean exists = newSpecializations.stream()
-                                .anyMatch(s -> s.getName().equalsIgnoreCase(incomingSpec.getName()));
-                        if (!exists) {
-                            // Asegurar que tenga los campos correctos para especializaciones manuales
-                            incomingSpec.setVerified(false);
-                            incomingSpec.setSource("MANUAL");
-                            incomingSpec.setVerifiedAt(null);
-                            incomingSpec.setDocumentUrl(null);
-                            newSpecializations.add(incomingSpec);
-                        }
-                    }
-                }
-                
-                user.setSpecializations(newSpecializations);
-            }
-            
-            // Ya no se permite modificar 'credentials' desde este endpoint
-            if (tutorDTO.getTokensPerHour() != null) user.setTokensPerHour(tutorDTO.getTokensPerHour());
+            updateTutorFields(user, tutorDTO);
+            handleTutorSpecializations(user, tutorDTO);
+            if (tutorDTO.getTokensPerHour() != null)
+                user.setTokensPerHour(tutorDTO.getTokensPerHour());
 
             User savedUser = userRepository.save(user);
-
-            // Retornar DTO actualizado
-            TutorProfileDTO updatedDTO = new TutorProfileDTO();
-            updatedDTO.setName(savedUser.getName());
-            updatedDTO.setEmail(savedUser.getEmail());
-            updatedDTO.setPhoneNumber(savedUser.getPhoneNumber());
-            updatedDTO.setIdType(savedUser.getIdType());
-            updatedDTO.setIdNumber(savedUser.getIdNumber());
-            updatedDTO.setBio(savedUser.getBio());
-            updatedDTO.setSpecializations(savedUser.getSpecializations());
-            updatedDTO.setCredentials(savedUser.getCredentials());
-            updatedDTO.setVerified(savedUser.isVerified());
-            updatedDTO.setTokensPerHour(savedUser.getTokensPerHour());
-
-            return updatedDTO;
+            return buildTutorProfileDTO(savedUser);
         } catch (UserServiceException e) {
             throw e;
         } catch (Exception e) {
@@ -617,67 +549,92 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    private void validateTutorUser(User user) throws UserServiceException {
+        if (user == null) {
+            throw new UserServiceException("Usuario no encontrado");
+        }
+        boolean hasTutorRole = user.getRole() != null && user.getRole().stream().anyMatch(ROLE_TUTOR::equalsIgnoreCase);
+        if (!hasTutorRole) {
+            throw new UserServiceException("El usuario no tiene el rol de tutor");
+        }
+    }
+
+    private void updateTutorFields(User user, TutorProfileDTO tutorDTO) {
+        if (tutorDTO.getName() != null)
+            user.setName(tutorDTO.getName());
+        if (tutorDTO.getEmail() != null)
+            user.setEmail(tutorDTO.getEmail());
+        if (tutorDTO.getPhoneNumber() != null)
+            user.setPhoneNumber(tutorDTO.getPhoneNumber());
+        if (tutorDTO.getIdType() != null)
+            user.setIdType(tutorDTO.getIdType());
+        if (tutorDTO.getIdNumber() != null)
+            user.setIdNumber(tutorDTO.getIdNumber());
+        if (tutorDTO.getBio() != null)
+            user.setBio(tutorDTO.getBio());
+    }
+
+    private void handleTutorSpecializations(User user, TutorProfileDTO tutorDTO) {
+        if (tutorDTO.getSpecializations() == null)
+            return;
+        List<Specialization> newSpecializations = new ArrayList<>();
+        if (user.getSpecializations() != null) {
+            for (Specialization existing : user.getSpecializations()) {
+                if (existing.isVerified()) {
+                    newSpecializations.add(existing);
+                }
+            }
+        }
+        for (Specialization incomingSpec : tutorDTO.getSpecializations()) {
+            if (!incomingSpec.isVerified()) {
+                boolean exists = newSpecializations.stream()
+                        .anyMatch(s -> s.getName().equalsIgnoreCase(incomingSpec.getName()));
+                if (!exists) {
+                    incomingSpec.setVerified(false);
+                    incomingSpec.setSource("MANUAL");
+                    incomingSpec.setVerifiedAt(null);
+                    incomingSpec.setDocumentUrl(null);
+                    newSpecializations.add(incomingSpec);
+                }
+            }
+        }
+        user.setSpecializations(newSpecializations);
+    }
+
+    private TutorProfileDTO buildTutorProfileDTO(User user) {
+        TutorProfileDTO dto = new TutorProfileDTO();
+        dto.setName(user.getName());
+        dto.setEmail(user.getEmail());
+        dto.setPhoneNumber(user.getPhoneNumber());
+        dto.setIdType(user.getIdType());
+        dto.setIdNumber(user.getIdNumber());
+        dto.setBio(user.getBio());
+        dto.setSpecializations(user.getSpecializations());
+        dto.setCredentials(user.getCredentials());
+        dto.setVerified(user.isVerified());
+        dto.setTokensPerHour(user.getTokensPerHour());
+        return dto;
+    }
+
     @Override
     public Map<String, Object> removeTutorRole(String token) throws UserServiceException {
         try {
-            // Extraer información del token de Cognito
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
             User user = userRepository.findBySub(sub);
-            if (user == null) {
-                throw new UserServiceException("Usuario no encontrado");
-            }
+            validateTutorUser(user);
 
-            // Verificar que el usuario tenga el rol de tutor (case-insensitive)
-            boolean hasTutorRole = false;
-            if (user.getRole() != null) {
-                for (String role : user.getRole()) {
-                    if ("TUTOR".equalsIgnoreCase(role)) {
-                        hasTutorRole = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (!hasTutorRole) {
-                throw new UserServiceException("El usuario no tiene el rol de tutor");
-            }
+            List<String> updatedRoles = removeRoleFromUser(user, ROLE_TUTOR);
 
-            // Remover el rol de tutor de la lista (case-insensitive)
-            List<String> updatedRoles = new ArrayList<>();
-            if (user.getRole() != null) {
-                for (String role : user.getRole()) {
-                    if (!"TUTOR".equalsIgnoreCase(role)) {
-                        updatedRoles.add(role);
-                    }
-                }
-            }
-            
-            // Limpiar campos específicos de tutor
-            user.setBio(null);
-            user.setSpecializations(null);
-            user.setCredentials(null);
-            
+            clearTutorFields(user);
             user.setRole(updatedRoles);
 
-            // Si ya no tiene roles, eliminar completamente el usuario
             if (updatedRoles.isEmpty()) {
                 userRepository.deleteBySub(sub);
-                
-                Map<String, Object> response = new HashMap<>();
-                response.put("message", "Perfil de tutor eliminado. Usuario completamente eliminado.");
-                response.put("userDeleted", true);
-                return response;
+                return buildRemoveTutorRoleResponse(true, null);
             } else {
-                // Solo actualizar el usuario removiendo el rol
                 User savedUser = userRepository.save(user);
-                
-                Map<String, Object> response = new HashMap<>();
-                response.put("message", "Rol de tutor eliminado exitosamente");
-                response.put("userDeleted", false);
-                response.put("remainingRoles", savedUser.getRole());
-                return response;
+                return buildRemoveTutorRoleResponse(false, savedUser.getRole());
             }
         } catch (UserServiceException e) {
             throw e;
@@ -685,17 +642,38 @@ public class UserServiceImpl implements UserService {
             throw new UserServiceException("Error al eliminar rol de tutor: " + e.getMessage());
         }
     }
+
+    private void clearTutorFields(User user) {
+        user.setBio(null);
+        user.setSpecializations(null);
+        user.setCredentials(null);
+    }
+
+    private Map<String, Object> buildRemoveTutorRoleResponse(boolean userDeleted, List<String> remainingRoles) {
+        Map<String, Object> response = new HashMap<>();
+        if (userDeleted) {
+            response.put(MESSAGE_KEY, "Perfil de tutor eliminado. Usuario completamente eliminado.");
+            response.put(USER_DELETED_KEY, true);
+        } else {
+            response.put(MESSAGE_KEY, "Rol de tutor eliminado exitosamente");
+            response.put(USER_DELETED_KEY, false);
+            response.put("remainingRoles", remainingRoles);
+        }
+        return response;
+    }
+
     // =====================================================
     // NUEVO MÉTODO PARA PERFIL PÚBLICO POR SUB
     @Override
     public Map<String, Object> getPublicProfileBySub(String sub) throws UserServiceException {
-        if (sub == null || sub.isBlank()) throw new UserServiceException("El parámetro 'sub' es requerido");
+        if (sub == null || sub.isBlank())
+            throw new UserServiceException("El parámetro 'sub' es requerido");
         User user = getUserBySub(sub);
         Map<String, Object> out = new HashMap<>();
         out.put("sub", user.getSub());
         out.put("name", user.getName());
-        out.put("role", user.getRole());
-        boolean isTutor = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
+        out.put(EMAIL_KEY, user.getEmail());
+        boolean isTutor = user.getRole() != null && user.getRole().stream().anyMatch(ROLE_TUTOR::equalsIgnoreCase);
         if (isTutor) {
             out.put("specializations", user.getSpecializations());
             out.put("credentials", user.getCredentials());
@@ -709,92 +687,28 @@ public class UserServiceImpl implements UserService {
     @Override
     public ProfileStatusDTO getProfileStatus(String token, String role) throws UserServiceException {
         try {
-            // Extraer información del token de Cognito
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
-            
             User user = userRepository.findBySub(sub);
             if (user == null) {
                 throw new UserServiceException("Usuario no encontrado");
             }
 
+            String currentRole = extractCurrentRole(user, role);
             ProfileStatusDTO profileStatus = new ProfileStatusDTO();
-            List<String> missingFields = new ArrayList<>();
-            
-            // Determinar el rol a verificar
-            String currentRole = null;
-            
-            // Si se proporciona el parámetro role, usarlo; de lo contrario, usar el primer rol del usuario
-            if (role != null && !role.trim().isEmpty()) {
-                // Validar que el usuario tenga ese rol
-                boolean hasRole = user.getRole() != null && 
-                    user.getRole().stream().anyMatch(r -> r.equalsIgnoreCase(role));
-                
-                if (!hasRole) {
-                    throw new UserServiceException("El usuario no tiene el rol: " + role);
-                }
-                currentRole = role.toUpperCase();
-            } else {
-                // Tomar el primer rol si tiene múltiples
-                if (user.getRole() != null && !user.getRole().isEmpty()) {
-                    currentRole = user.getRole().get(0).toUpperCase();
-                }
-            }
-            
             profileStatus.setCurrentRole(currentRole);
-            
-            // Si no tiene rol, el perfil está incompleto
+
             if (currentRole == null) {
                 profileStatus.setComplete(false);
-                missingFields.add("role");
-                profileStatus.setMissingFields(missingFields);
+                profileStatus.setMissingFields(List.of("role"));
                 return profileStatus;
             }
-            
-            // Verificar campos según el rol
-            if ("STUDENT".equalsIgnoreCase(currentRole)) {
-                // Para estudiante: name, email, phoneNumber, educationLevel
-                if (user.getName() == null || user.getName().trim().isEmpty()) {
-                    missingFields.add("name");
-                }
-                if (user.getEmail() == null || user.getEmail().trim().isEmpty()) {
-                    missingFields.add("email");
-                }
-                if (user.getPhoneNumber() == null || user.getPhoneNumber().trim().isEmpty()) {
-                    missingFields.add("phoneNumber");
-                }
-                if (user.getEducationLevel() == null || user.getEducationLevel().trim().isEmpty()) {
-                    missingFields.add("educationLevel");
-                }
-            } else if ("TUTOR".equalsIgnoreCase(currentRole)) {
-                // Para tutor: name, email, phoneNumber, bio, specializations (al menos 1), credentials (al menos 1)
-                if (user.getName() == null || user.getName().trim().isEmpty()) {
-                    missingFields.add("name");
-                }
-                if (user.getEmail() == null || user.getEmail().trim().isEmpty()) {
-                    missingFields.add("email");
-                }
-                if (user.getPhoneNumber() == null || user.getPhoneNumber().trim().isEmpty()) {
-                    missingFields.add("phoneNumber");
-                }
-                if (user.getBio() == null || user.getBio().trim().isEmpty()) {
-                    missingFields.add("bio");
-                }
-                if (user.getSpecializations() == null || user.getSpecializations().isEmpty()) {
-                    missingFields.add("specializations");
-                }
-                if (user.getCredentials() == null || user.getCredentials().isEmpty()) {
-                    missingFields.add("credentials");
-                }
-            }
-            
-            // Determinar si el perfil está completo
-            boolean isComplete = missingFields.isEmpty();
-            profileStatus.setComplete(isComplete);
+
+            List<String> missingFields = getMissingFieldsForRole(user, currentRole);
+            profileStatus.setComplete(missingFields.isEmpty());
             profileStatus.setMissingFields(missingFields.isEmpty() ? null : missingFields);
-            
+
             return profileStatus;
-            
         } catch (UserServiceException e) {
             throw e;
         } catch (Exception e) {
@@ -802,156 +716,218 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    private String extractCurrentRole(User user, String role) throws UserServiceException {
+        if (role != null && !role.trim().isEmpty()) {
+            boolean hasRole = user.getRole() != null &&
+                    user.getRole().stream().anyMatch(r -> r.equalsIgnoreCase(role));
+            if (!hasRole) {
+                throw new UserServiceException("El usuario no tiene el rol: " + role);
+            }
+            return role.toUpperCase();
+        } else if (user.getRole() != null && !user.getRole().isEmpty()) {
+            return user.getRole().get(0).toUpperCase();
+        }
+        return null;
+    }
+
+    private List<String> getMissingFieldsForRole(User user, String currentRole) {
+        List<String> missingFields = new ArrayList<>();
+        if (ROLE_STUDENT.equalsIgnoreCase(currentRole)) {
+            addIfEmpty(user.getName(), "name", missingFields);
+            addIfEmpty(user.getEmail(), EMAIL_KEY, missingFields);
+            addIfEmpty(user.getPhoneNumber(), "phoneNumber", missingFields);
+            addIfEmpty(user.getEducationLevel(), "educationLevel", missingFields);
+        } else if (ROLE_TUTOR.equalsIgnoreCase(currentRole)) {
+            addIfEmpty(user.getName(), "name", missingFields);
+            addIfEmpty(user.getEmail(), EMAIL_KEY, missingFields);
+            addIfEmpty(user.getPhoneNumber(), "phoneNumber", missingFields);
+            addIfEmpty(user.getBio(), "bio", missingFields);
+            if (user.getSpecializations() == null || user.getSpecializations().isEmpty()) {
+                missingFields.add("specializations");
+            }
+            if (user.getCredentials() == null || user.getCredentials().isEmpty()) {
+                missingFields.add("credentials");
+            }
+        }
+        return missingFields;
+    }
+
+    private void addIfEmpty(String value, String fieldName, List<String> missingFields) {
+        if (value == null || value.trim().isEmpty()) {
+            missingFields.add(fieldName);
+        }
+    }
+
     // =====================================================
     // SUBIDA, VALIDACIÓN Y GUARDADO AUTOMÁTICO DE CREDENCIALES
     // =====================================================
     @Override
-    public Map<String, Object> uploadAndValidateTutorCredentials(String token, List<MultipartFile> files) throws UserServiceException {
+    public Map<String, Object> uploadAndValidateTutorCredentials(String token, List<MultipartFile> files)
+            throws UserServiceException {
         try {
-            if (files == null || files.isEmpty()) {
-                throw new UserServiceException("Debe proporcionar al menos un archivo");
-            }
-            
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
-            String sub = userInfo.getSub();
-            User user = userRepository.findBySub(sub);
-            if (user == null) {
-                throw new UserServiceException("Usuario no encontrado");
-            }
-            
-            boolean hasTutorRole = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
-            if (!hasTutorRole) {
-                throw new UserServiceException("El usuario no tiene el rol de tutor");
-            }
-
-            List<Map<String, Object>> results = new ArrayList<>();
-            List<String> validUrls = new ArrayList<>();
-            int uploaded = 0;
-            int validated = 0;
-            int rejected = 0;
-
-            // Procesar cada archivo
-            for (MultipartFile file : files) {
-                Map<String, Object> fileResult = new HashMap<>();
-                fileResult.put("fileName", file.getOriginalFilename());
-                
-                try {
-                    // 1. Subir a Azure
-                    List<String> urls = azureBlobStorageService.uploadFiles(sub, List.of(file));
-                    String fileUrl = urls.get(0);
-                    uploaded++;
-                    fileResult.put("uploadedUrl", fileUrl);
-                    fileResult.put("uploaded", true);
-
-                    // 2. Validar con n8n
-                    RestTemplate restTemplate = new RestTemplate();
-                    HttpHeaders headers = new HttpHeaders();
-                    headers.setContentType(MediaType.APPLICATION_JSON);
-                    Map<String, String> body = new HashMap<>();
-                    body.put("fileUrl", fileUrl);
-                    HttpEntity<Map<String, String>> req = new HttpEntity<>(body, headers);
-
-                    N8nValidationResultDTO validationResult = null;
-                    try {
-                        ResponseEntity<N8nValidationResultDTO> resp = restTemplate.postForEntity(n8nWebhookUrl, req, N8nValidationResultDTO.class);
-                        validationResult = resp.getBody();
-                    } catch (Exception e) {
-                        ResponseEntity<N8nValidationResultDTO[]> resp = restTemplate.postForEntity(n8nWebhookUrl, req, N8nValidationResultDTO[].class);
-                        N8nValidationResultDTO[] resultsArray = resp.getBody();
-                        if (resultsArray != null && resultsArray.length > 0) {
-                            validationResult = resultsArray[0];
-                        }
-                    }
-
-                    if (validationResult == null) {
-                        throw new UserServiceException("Respuesta inválida desde n8n");
-                    }
-
-                    fileResult.put("validation", validationResult);
-
-                    // 3. Guardar en BD solo si es documento académico
-                    if (validationResult.isEsDocumentoAcademico()) {
-                        validUrls.add(fileUrl);
-                        validated++;
-                        fileResult.put("saved", true);
-                        fileResult.put("status", "accepted");
-                        
-                        // Añadir especialidad al perfil del tutor si viene en la respuesta y no está repetida
-                        String especialidadName = validationResult.getEspecialidad();
-                        if (especialidadName != null && !especialidadName.isBlank()) {
-                            if (user.getSpecializations() == null) {
-                                user.setSpecializations(new ArrayList<>());
-                            }
-                            
-                            // Verificar si ya existe una especialización con ese nombre
-                            boolean exists = user.getSpecializations().stream()
-                                    .anyMatch(s -> s.getName().equalsIgnoreCase(especialidadName));
-                            
-                            if (!exists) {
-                                // Crear objeto Specialization verificado por IA
-                                Specialization newSpec = new Specialization();
-                                newSpec.setName(especialidadName);
-                                newSpec.setVerified(true);
-                                newSpec.setSource("AI_VALIDATION");
-                                newSpec.setVerifiedAt(Instant.now().toString());
-                                newSpec.setDocumentUrl(fileUrl);
-                                
-                                user.getSpecializations().add(newSpec);
-                                fileResult.put("addedSpecialization", especialidadName);
-                            }
-                        }
-                    } else {
-                        rejected++;
-                        fileResult.put("saved", false);
-                        fileResult.put("status", "rejected");
-                        fileResult.put("reason", validationResult.getMotivoNoValido());
-                    }
-
-                } catch (Exception e) {
-                    fileResult.put("uploaded", false);
-                    fileResult.put("saved", false);
-                    fileResult.put("status", "error");
-                    fileResult.put("error", e.getMessage());
-                    rejected++;
-                }
-
-                results.add(fileResult);
-            }
-
-            // Guardar URLs válidas en BD
-            if (!validUrls.isEmpty()) {
-                if (user.getCredentials() == null) {
-                    user.setCredentials(new ArrayList<>());
-                }
-                for (String url : validUrls) {
-                    if (!user.getCredentials().contains(url)) {
-                        user.getCredentials().add(url);
-                    }
-                }
-                // Marcar verificación del tutor si aún no está verificado y se validó al menos un documento académico
-                if (!user.isVerified()) {
-                    user.setVerified(true);
-                }
-                userRepository.save(user);
-            }
-
-            // Construir respuesta
-            Map<String, Object> response = new HashMap<>();
-            response.put("totalFiles", files.size());
-            response.put("uploaded", uploaded);
-            response.put("validated", validated);
-            response.put("rejected", rejected);
-            response.put("savedCredentials", validUrls);
-            response.put("details", results);
-            response.put("tutorVerified", user.isVerified());
-
-            return response;
-
+            validateFilesInput(files);
+            User user = getTutorUserFromToken(token);
+            UploadValidationResult result = processFilesForTutor(user, files);
+            updateTutorCredentialsAndVerification(user, result.validUrls);
+            return buildUploadValidationResponse(files.size(), result, user.isVerified());
         } catch (UserServiceException e) {
             throw e;
         } catch (Exception e) {
             throw new UserServiceException("Error al procesar credenciales: " + e.getMessage());
         }
+    }
+
+    private void validateFilesInput(List<MultipartFile> files) throws UserServiceException {
+        if (files == null || files.isEmpty()) {
+            throw new UserServiceException("Debe proporcionar al menos un archivo");
+        }
+    }
+
+    private User getTutorUserFromToken(String token) throws UserServiceException {
+        return getAndValidateTutorUser(token);
+    }
+
+    private static final String SAVED_KEY = "saved";
+    private static final String STATUS_KEY = "status";
+    private static final String TUTOR_VERIFIED_KEY = "tutorVerified";
+
+    private static class UploadValidationResult {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<String> validUrls = new ArrayList<>();
+        int uploaded = 0;
+        int validated = 0;
+        int rejected = 0;
+    }
+
+    private UploadValidationResult processFilesForTutor(User user, List<MultipartFile> files) {
+        UploadValidationResult result = new UploadValidationResult();
+        for (MultipartFile file : files) {
+            Map<String, Object> fileResult = processSingleFile(user, file, result);
+            result.results.add(fileResult);
+        }
+        return result;
+    }
+
+    private Map<String, Object> processSingleFile(User user, MultipartFile file, UploadValidationResult result) {
+        Map<String, Object> fileResult = new HashMap<>();
+        fileResult.put("fileName", file.getOriginalFilename());
+        try {
+            String fileUrl = uploadFileToAzure(user.getSub(), file);
+            result.uploaded++;
+            fileResult.put("uploadedUrl", fileUrl);
+            fileResult.put(UPLOADED_KEY, true);
+
+            N8nValidationResultDTO validationResult = validateFileWithN8n(fileUrl);
+            fileResult.put("validation", validationResult);
+
+            if (validationResult.isValid()) {
+                fileResult.put(SAVED_KEY, true);
+                fileResult.put(STATUS_KEY, "accepted");
+                addSpecializationIfNeeded(user, validationResult, fileUrl, fileResult);
+            } else {
+                result.rejected++;
+                fileResult.put(SAVED_KEY, false);
+                fileResult.put(STATUS_KEY, "rejected");
+                fileResult.put("reason", validationResult.getMotivoNoValido());
+            }
+        } catch (Exception e) {
+            fileResult.put(UPLOADED_KEY, false);
+            fileResult.put(SAVED_KEY, false);
+            fileResult.put(STATUS_KEY, "error");
+            fileResult.put("error", e.getMessage());
+            result.rejected++;
+        }
+        return fileResult;
+    }
+
+    private String uploadFileToAzure(String sub, MultipartFile file) throws UserServiceException {
+        try {
+            List<String> urls = azureBlobStorageService.uploadFiles(sub, List.of(file));
+            return urls.get(0);
+        } catch (Exception e) {
+            throw new UserServiceException("Error uploading file to Azure: " + e.getMessage());
+        }
+    }
+
+    private N8nValidationResultDTO validateFileWithN8n(String fileUrl) throws UserServiceException {
+        RestTemplate restTemplate = new RestTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        Map<String, String> body = new HashMap<>();
+        body.put("fileUrl", fileUrl);
+        HttpEntity<Map<String, String>> req = new HttpEntity<>(body, headers);
+
+        try {
+            ResponseEntity<N8nValidationResultDTO> resp = restTemplate.postForEntity(n8nWebhookUrl, req,
+                    N8nValidationResultDTO.class);
+            N8nValidationResultDTO validationResult = resp.getBody();
+            if (validationResult == null)
+                throw new UserServiceException("Respuesta inválida desde n8n");
+            return validationResult;
+        } catch (Exception e) {
+            try {
+                ResponseEntity<N8nValidationResultDTO[]> resp = restTemplate.postForEntity(n8nWebhookUrl, req,
+                        N8nValidationResultDTO[].class);
+                N8nValidationResultDTO[] resultsArray = resp.getBody();
+                if (resultsArray != null && resultsArray.length > 0) {
+                    return resultsArray[0];
+                }
+            } catch (Exception ex) {
+                throw new UserServiceException("Respuesta inválida desde n8n: " + ex.getMessage());
+            }
+            throw new UserServiceException("Respuesta inválida desde n8n: " + e.getMessage());
+        }
+    }
+
+    private void addSpecializationIfNeeded(User user, N8nValidationResultDTO validationResult, String fileUrl,
+            Map<String, Object> fileResult) {
+        String especialidadName = validationResult.getEspecialidad();
+        if (especialidadName != null && !especialidadName.isBlank()) {
+            if (user.getSpecializations() == null) {
+                user.setSpecializations(new ArrayList<>());
+            }
+            boolean exists = user.getSpecializations().stream()
+                    .anyMatch(s -> s.getName().equalsIgnoreCase(especialidadName));
+            if (!exists) {
+                Specialization newSpec = new Specialization();
+                newSpec.setName(especialidadName);
+                newSpec.setVerified(true);
+                newSpec.setSource("AI_VALIDATION");
+                newSpec.setVerifiedAt(Instant.now().toString());
+                newSpec.setDocumentUrl(fileUrl);
+                user.getSpecializations().add(newSpec);
+                fileResult.put("addedSpecialization", especialidadName);
+            }
+        }
+    }
+
+    private void updateTutorCredentialsAndVerification(User user, List<String> validUrls) {
+        if (!validUrls.isEmpty()) {
+            if (user.getCredentials() == null) {
+                user.setCredentials(new ArrayList<>());
+            }
+            for (String url : validUrls) {
+                if (!user.getCredentials().contains(url)) {
+                    user.getCredentials().add(url);
+                }
+            }
+            if (!user.isVerified()) {
+                user.setVerified(true);
+            }
+            userRepository.save(user);
+        }
+    }
+
+    private Map<String, Object> buildUploadValidationResponse(int totalFiles, UploadValidationResult result,
+            boolean tutorVerified) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("totalFiles", totalFiles);
+        response.put(UPLOADED_KEY, result.uploaded);
+        response.put("validated", result.validated);
+        response.put("rejected", result.rejected);
+        response.put("details", result.results);
+        response.put(TUTOR_VERIFIED_KEY, tutorVerified);
+        return response;
     }
 
     // =====================================================
@@ -960,97 +936,119 @@ public class UserServiceImpl implements UserService {
     @Override
     public Map<String, Object> deleteTutorCredentials(String token, List<String> urls) throws UserServiceException {
         try {
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
-            String sub = userInfo.getSub();
-            User user = userRepository.findBySub(sub);
-            if (user == null) {
-                throw new UserServiceException("Usuario no encontrado");
+            User user = getAndValidateTutorUser(token);
+            List<String> currentCredentials = user.getCredentials();
+            if (currentCredentials == null || currentCredentials.isEmpty()) {
+                Map<String, Object> resp = new HashMap<>();
+                resp.put("removedCount", 0);
+                resp.put("remainingCredentials", new ArrayList<>());
+                resp.put(TUTOR_VERIFIED_KEY, false);
+                resp.put("deletedFromAzure", 0);
+                resp.put("azureDeleteFailed", new ArrayList<>());
+                resp.put("removedSpecializations", new ArrayList<>());
+                resp.put("notFound", urls == null ? new ArrayList<>() : new ArrayList<>(urls));
+                return resp;
             }
-
-            boolean hasTutorRole = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
-            if (!hasTutorRole) {
-                throw new UserServiceException("El usuario no tiene el rol de tutor");
-            }
-
-            List<String> current = user.getCredentials();
-            if (current == null || current.isEmpty()) {
-                // Nada por eliminar; asegurar verificación acorde al estado actual
-                user.setVerified(false);
-                userRepository.save(user);
-                return Map.of(
-                        "removedCount", 0,
-                        "notFound", urls == null ? List.of() : urls,
-                        "remainingCredentials", List.of(),
-                        "tutorVerified", false
-                );
-            }
-
-            if (urls == null) {
-                urls = List.of();
-            }
-
-            List<String> notFound = new ArrayList<>();
-            List<String> removedUrls = new ArrayList<>();
-            for (String url : urls) {
-                if (current.remove(url)) {
-                    removedUrls.add(url);
-                } else {
-                    notFound.add(url);
-                }
-            }
-
-            int removed = removedUrls.size();
-
-            // Eliminar especializaciones vinculadas a las URLs eliminadas
-            List<String> removedSpecializations = new ArrayList<>();
-            if (user.getSpecializations() != null && !user.getSpecializations().isEmpty()) {
-                List<Specialization> remainingSpecs = new ArrayList<>();
-                for (Specialization spec : user.getSpecializations()) {
-                    // Mantener especializaciones manuales o las que no estén vinculadas a URLs eliminadas
-                    if (!spec.isVerified() || !removedUrls.contains(spec.getDocumentUrl())) {
-                        remainingSpecs.add(spec);
-                    } else {
-                        removedSpecializations.add(spec.getName());
-                    }
-                }
-                user.setSpecializations(remainingSpecs);
-            }
-
-            // Si ya no quedan credenciales, desverificar
-            if (current.isEmpty()) {
-                user.setVerified(false);
-            }
-
-            user.setCredentials(current);
-            userRepository.save(user);
-
-            // Intentar eliminar de Azure los blobs correspondientes a las URLs eliminadas
-            int deletedFromAzure = 0;
-            List<String> azureDeleteFailed = new ArrayList<>();
-            for (String u : removedUrls) {
-                try {
-                    boolean ok = azureBlobStorageService.deleteByUrl(u);
-                    if (ok) deletedFromAzure++; else azureDeleteFailed.add(u);
-                } catch (Exception ex) {
-                    azureDeleteFailed.add(u);
-                }
-            }
-
-            Map<String, Object> resp = new HashMap<>();
-            resp.put("removedCount", removed);
-            resp.put("notFound", notFound);
-            resp.put("remainingCredentials", new ArrayList<>(current));
-            resp.put("tutorVerified", user.isVerified());
-            resp.put("deletedFromAzure", deletedFromAzure);
-            resp.put("azureDeleteFailed", azureDeleteFailed);
-            resp.put("removedSpecializations", removedSpecializations); // Especializaciones eliminadas automáticamente
-            return resp;
-
+            List<String> urlsToRemove = (urls == null) ? List.of() : urls;
+            RemovalResult removalResult = removeCredentialsAndSpecializations(user, currentCredentials, urlsToRemove);
+            updateUserVerificationAndSave(user, currentCredentials);
+            AzureRemovalResult azureResult = removeFromAzure(removedUrls(removalResult));
+            return buildDeleteTutorCredentialsResponse(removalResult, currentCredentials, user, azureResult);
         } catch (UserServiceException e) {
             throw e;
         } catch (Exception e) {
             throw new UserServiceException("Error al eliminar credenciales: " + e.getMessage());
         }
+    }
+
+    private User getAndValidateTutorUser(String token) throws UserServiceException {
+        CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
+        String sub = userInfo.getSub();
+        User user = userRepository.findBySub(sub);
+        if (user == null) {
+            throw new UserServiceException("Usuario no encontrado");
+        }
+        boolean hasTutorRole = user.getRole() != null
+                && user.getRole().stream().anyMatch(ROLE_TUTOR::equalsIgnoreCase);
+        if (!hasTutorRole) {
+            throw new UserServiceException("El usuario no tiene el rol de tutor");
+        }
+        return user;
+    }
+
+    private static class RemovalResult {
+        List<String> notFound = new ArrayList<>();
+        List<String> removedUrls = new ArrayList<>();
+        List<String> removedSpecializations = new ArrayList<>();
+    }
+
+    private RemovalResult removeCredentialsAndSpecializations(User user, List<String> current, List<String> urls) {
+        RemovalResult result = new RemovalResult();
+        for (String url : urls) {
+            if (current.remove(url)) {
+                result.removedUrls.add(url);
+            } else {
+                result.notFound.add(url);
+            }
+        }
+        if (user.getSpecializations() != null && !user.getSpecializations().isEmpty()) {
+            List<Specialization> remainingSpecs = new ArrayList<>();
+            for (Specialization spec : user.getSpecializations()) {
+                if (!spec.isVerified() || !result.removedUrls.contains(spec.getDocumentUrl())) {
+                    remainingSpecs.add(spec);
+                } else {
+                    result.removedSpecializations.add(spec.getName());
+                }
+            }
+            user.setSpecializations(remainingSpecs);
+        }
+        return result;
+    }
+
+    private void updateUserVerificationAndSave(User user, List<String> current) {
+        if (current.isEmpty()) {
+            user.setVerified(false);
+        }
+        user.setCredentials(current);
+        userRepository.save(user);
+    }
+
+    private static class AzureRemovalResult {
+        int deletedFromAzure = 0;
+        List<String> azureDeleteFailed = new ArrayList<>();
+    }
+
+    private AzureRemovalResult removeFromAzure(List<String> removedUrls) {
+        AzureRemovalResult result = new AzureRemovalResult();
+        for (String u : removedUrls) {
+            try {
+                boolean ok = azureBlobStorageService.deleteByUrl(u);
+                if (ok)
+                    result.deletedFromAzure++;
+                else
+                    result.azureDeleteFailed.add(u);
+            } catch (Exception ex) {
+                result.azureDeleteFailed.add(u);
+            }
+        }
+        return result;
+    }
+
+    private List<String> removedUrls(RemovalResult result) {
+        return result.removedUrls;
+    }
+
+    private Map<String, Object> buildDeleteTutorCredentialsResponse(RemovalResult removalResult, List<String> current,
+                                                                   User user, AzureRemovalResult azureResult) {
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("removedCount", removalResult.removedUrls.size());
+        resp.put("remainingCredentials", new ArrayList<>(current));
+        resp.put(TUTOR_VERIFIED_KEY, user.isVerified());
+        resp.put("deletedFromAzure", azureResult.deletedFromAzure);
+        resp.put("azureDeleteFailed", azureResult.azureDeleteFailed);
+        resp.put("removedSpecializations", removalResult.removedSpecializations);
+        resp.put("notFound", removalResult.notFound);
+        return resp;
     }
 
     // =====================================================
@@ -1065,9 +1063,9 @@ public class UserServiceImpl implements UserService {
             }
 
             // Verificar que el usuario tenga el rol de tutor
-            boolean hasTutorRole = user.getRole() != null && 
-                user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
-            
+            boolean hasTutorRole = user.getRole() != null &&
+                    user.getRole().stream().anyMatch(ROLE_TUTOR::equalsIgnoreCase);
+
             if (!hasTutorRole) {
                 throw new UserServiceException("El usuario no tiene el rol de tutor");
             }
@@ -1075,7 +1073,7 @@ public class UserServiceImpl implements UserService {
             // Actualizar el estado de verificación
             user.setVerified(isVerified);
             userRepository.save(user);
-            
+
         } catch (UserServiceException e) {
             throw e;
         } catch (Exception e) {
@@ -1090,13 +1088,14 @@ public class UserServiceImpl implements UserService {
     @Override
     public Integer getTutorTokensPerHour(String token) throws UserServiceException {
         try {
-            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace("Bearer ", ""));
+            CognitoUserInfo userInfo = cognitoTokenDecoder.extractUserInfo(token.replace(BEARER_PREFIX, ""));
             String sub = userInfo.getSub();
             User user = userRepository.findBySub(sub);
             if (user == null) {
                 throw new UserServiceException("Usuario no encontrado");
             }
-            boolean hasTutorRole = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
+            boolean hasTutorRole = user.getRole() != null
+                    && user.getRole().stream().anyMatch(ROLE_TUTOR::equalsIgnoreCase);
             if (!hasTutorRole) {
                 throw new UserServiceException("El usuario no tiene el rol de tutor");
             }
@@ -1110,11 +1109,13 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Integer getTutorTokensPerHourBySub(String sub) throws UserServiceException {
-        if (sub == null || sub.isBlank()) throw new UserServiceException("El parámetro 'sub' es requerido");
+        if (sub == null || sub.isBlank())
+            throw new UserServiceException("El parámetro 'sub' es requerido");
         User user = userRepository.findBySub(sub);
-        if (user == null) throw new UserServiceException("Usuario no encontrado");
-        boolean hasTutorRole = user.getRole() != null && user.getRole().stream().anyMatch(r -> "TUTOR".equalsIgnoreCase(r));
-        if (!hasTutorRole) throw new UserServiceException("El usuario no tiene el rol de tutor");
+        boolean hasTutorRole = user.getRole() != null
+                && user.getRole().stream().anyMatch(ROLE_TUTOR::equalsIgnoreCase);
+        if (!hasTutorRole)
+            throw new UserServiceException("El usuario no tiene el rol de tutor");
         return user.getTokensPerHour();
     }
 }
